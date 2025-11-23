@@ -1,0 +1,69 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bitunix-scalper-bot
+  
+  datasource:
+    url: jdbc:h2:mem:scalperdb;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        jdbc:
+          time_zone: UTC
+        connection:
+          provider_disables_autocommit: true
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# Bitunix API Configuration
+bitunix:
+  api:
+    base-url: https://fapi.bitunix.com
+    api-key: ${BITUNIX_API_KEY:1b05acc3eb59629a068f44e74229c8c8}
+    secret-key: ${BITUNIX_SECRET_KEY:7830a6dc3f03fdea066c3ad87ce7f72c}
+  
+  trading:
+    maker-fee: 0.0002  # 0.0200%
+    taker-fee: 0.0006  # 0.0600%
+    min-trade-amount: 0.01
+    max-trade-amount: 1.0
+
+# Trading Configuration
+trading:
+  strategies:
+    enabled:
+      - rsi-scalping
+      - bollinger-bounce
+      - ema-crossover
+      - momentum-breakout
+      - support-resistance
+      - volume-spike
+      - mean-reversion
+  
+  risk:
+    max-position-size: 1
+    stop-loss-percentage: 0.5
+    take-profit-percentage: 0.3
+    max-daily-loss: 5
+
+logging:
+  level:
+    com.bitunix.scalper: DEBUG
+    org.springframework.web: INFO
+    org.springframework.boot: INFO
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

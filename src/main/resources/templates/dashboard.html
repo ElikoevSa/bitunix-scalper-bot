@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitunix Scalper Bot Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-active { background-color: #28a745; }
+        .status-inactive { background-color: #dc3545; }
+        .profit-positive { color: #28a745; }
+        .profit-negative { color: #dc3545; }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .metric-card {
+            border-left: 4px solid #667eea;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="fas fa-robot"></i> Bitunix Scalper Bot
+            </span>
+            <div class="navbar-nav">
+                <span class="navbar-text">
+                    <span class="status-indicator status-active"></span>
+                    Bot Status: Active
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- Main Trading Panel -->
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-line"></i> Trading Dashboard</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Selected Strategy</h6>
+                                <p class="text-muted" th:text="${currentStrategy?.name ?: 'No strategy selected'}"></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Selected Trading Pair</h6>
+                                <p class="text-muted" th:text="${selectedPair?.symbol ?: 'No pair selected'}"></p>
+                            </div>
+                        </div>
+                        
+                        <div class="row mt-3" th:if="${currentTrade}">
+                            <div class="col-md-3">
+                                <h6>Entry Price</h6>
+                                <p class="text-primary" th:text="${#numbers.formatDecimal(currentTrade.entryPrice, 1, 2)}"></p>
+                            </div>
+                            <div class="col-md-3">
+                                <h6>Exit Price</h6>
+                                <p class="text-info" th:text="${currentTrade.exitPrice ? #numbers.formatDecimal(currentTrade.exitPrice, 1, 2) : 'N/A'}"></p>
+                            </div>
+                            <div class="col-md-3">
+                                <h6>Profit/Loss</h6>
+                                <p th:class="${currentTrade.profit != null && currentTrade.profit > 0 ? 'profit-positive' : 'profit-negative'}" 
+                                   th:text="${currentTrade.profit ? #numbers.formatDecimal(currentTrade.profit, 1, 2) + ' USDT' : 'N/A'}"></p>
+                            </div>
+                            <div class="col-md-3">
+                                <h6>Profit %</h6>
+                                <p th:class="${currentTrade.profitPercentage != null && currentTrade.profitPercentage > 0 ? 'profit-positive' : 'profit-negative'}" 
+                                   th:text="${currentTrade.profitPercentage ? #numbers.formatDecimal(currentTrade.profitPercentage, 1, 2) + '%' : 'N/A'}"></p>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <div th:if="${tradingEnabled}" class="alert alert-success">
+                                <i class="fas fa-check-circle"></i> Trading is ACTIVE
+                                <span th:if="${activeTradesCount > 0}" class="badge badge-info ml-2" th:text="${activeTradesCount} + ' active trades'"></span>
+                            </div>
+                            <div th:unless="${tradingEnabled}" class="alert alert-warning">
+                                <i class="fas fa-pause-circle"></i> Trading is STOPPED
+                            </div>
+                            
+                            <form th:if="${selectedPair != null and currentStrategy != null and !tradingEnabled}" method="post" action="/start-trading">
+                                <input type="hidden" name="symbol" th:value="${selectedPair.symbol}">
+                                <input type="hidden" name="strategyName" th:value="${currentStrategy.name}">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-play"></i> Start Trading
+                                </button>
+                            </form>
+                            
+                            <form th:if="${tradingEnabled}" method="post" action="/stop-trading">
+                                <button type="submit" class="btn btn-danger">
+                                    <i class="fas fa-stop"></i> Stop Trading
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Panel -->
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Trading Statistics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-card card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Total Profit</h6>
+                                <h4 th:class="${totalProfit > 0 ? 'profit-positive' : 'profit-negative'}" 
+                                    th:text="${#numbers.formatDecimal(totalProfit, 1, 2) + ' USDT'}"></h4>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Success Rate</h6>
+                                <h4 th:text="${#numbers.formatDecimal(successRate, 1, 2) + '%'}"></h4>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Total Trades</h6>
+                                <h4 th:text="${totalTrades}"></h4>
+                            </div>
+                        </div>
+                        
+                        <div class="metric-card card">
+                            <div class="card-body">
+                                <h6 class="card-title">Successful Trades</h6>
+                                <h4 th:text="${successfulTrades}"></h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Pairs Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-coins"></i> Available Trading Pairs</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <th>Price</th>
+                                        <th>24h Volume</th>
+                                        <th>24h Change</th>
+                                        <th>RSI</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr th:each="pair : ${activePairs}">
+                                        <td th:text="${pair.symbol}"></td>
+                                        <td th:text="${#numbers.formatDecimal(pair.price, 1, 4)}"></td>
+                                        <td th:text="${#numbers.formatDecimal(pair.volume24h, 1, 2)}"></td>
+                                        <td th:class="${pair.priceChange24h > 0 ? 'profit-positive' : 'profit-negative'}" 
+                                            th:text="${#numbers.formatDecimal(pair.priceChange24h, 1, 2) + '%'}"></td>
+                                        <td th:text="${pair.rsi != null ? #numbers.formatDecimal(pair.rsi, 1, 2) : 'N/A'}"></td>
+                                        <td>
+                                            <span class="status-indicator" 
+                                                  th:class="${pair.isActive ? 'status-active' : 'status-inactive'}"></span>
+                                            <span th:text="${pair.isActive ? 'Active' : 'Inactive'}"></span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rate Limiter Panel -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-tachometer-alt"></i> Rate Limiter Status</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="metric-card card mb-3">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Bitunix API</h6>
+                                        <h4 th:text="${bitunixRequests} + '/7'"></h4>
+                                        <small class="text-muted">requests/second</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card card mb-3">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Binance API</h6>
+                                        <h4 th:text="${binanceRequests} + '/7'"></h4>
+                                        <small class="text-muted">requests/second</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card card mb-3">
+                                    <div class="card-body">
+                                        <h6 class="card-title">CoinGecko API</h6>
+                                        <h4 th:text="${coingeckoRequests} + '/7'"></h4>
+                                        <small class="text-muted">requests/second</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card card mb-3">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Trading Cycle</h6>
+                                        <h4 th:text="${tradingCycleRequests} + '/7'"></h4>
+                                        <small class="text-muted">requests/second</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategies Panel -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cogs"></i> Trading Strategies</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4" th:each="strategy : ${strategies}">
+                                <div class="card mb-3">
+                                    <div class="card-body">
+                                        <h6 class="card-title" th:text="${strategy.name}"></h6>
+                                        <p class="card-text text-muted">Priority: <span th:text="${strategy.priority}"></span></p>
+                                        <span class="status-indicator" 
+                                              th:class="${strategy.active ? 'status-active' : 'status-inactive'}"></span>
+                                        <span th:text="${strategy.active ? 'Active' : 'Inactive'}"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(function() {
+            location.reload();
+        }, 30000);
+        
+        // Add click handlers for better UX
+        document.addEventListener('DOMContentLoaded', function() {
+            const startButton = document.querySelector('button[type="submit"][formaction="/start-trading"]');
+            const stopButton = document.querySelector('button[type="submit"][formaction="/stop-trading"]');
+            
+            if (startButton) {
+                startButton.addEventListener('click', function() {
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+                    this.disabled = true;
+                });
+            }
+            
+            if (stopButton) {
+                stopButton.addEventListener('click', function() {
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
+                    this.disabled = true;
+                });
+            }
+        });
+    </script>
+</body>
+</html>
