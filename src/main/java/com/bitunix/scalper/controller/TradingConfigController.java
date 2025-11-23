@@ -160,6 +160,90 @@ public class TradingConfigController {
     }
     
     /**
+     * Update API settings
+     */
+    @PostMapping("/api")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> updateApiSettings(
+            @RequestParam(required = false) String apiBaseUrl,
+            @RequestParam(required = false) String apiKey,
+            @RequestParam(required = false) String apiSecretKey) {
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            TradingConfig config = configService.getActiveConfig();
+            
+            if (apiBaseUrl != null && !apiBaseUrl.trim().isEmpty()) {
+                config.setApiBaseUrl(apiBaseUrl.trim());
+            }
+            if (apiKey != null && !apiKey.trim().isEmpty()) {
+                config.setApiKey(apiKey.trim());
+            }
+            if (apiSecretKey != null && !apiSecretKey.trim().isEmpty()) {
+                config.setApiSecretKey(apiSecretKey.trim());
+            }
+            
+            configService.saveConfig(config);
+            response.put("success", true);
+            response.put("message", "API settings updated successfully");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "Error: " + e.getMessage());
+        }
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    /**
+     * Update indicator settings
+     */
+    @PostMapping("/indicators")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> updateIndicators(
+            @RequestParam(required = false) Integer rsiPeriod,
+            @RequestParam(required = false) Integer bollingerPeriod,
+            @RequestParam(required = false) Double bollingerStdDev,
+            @RequestParam(required = false) Integer emaFastPeriod,
+            @RequestParam(required = false) Integer emaSlowPeriod,
+            @RequestParam(required = false) Integer supportResistancePeriod) {
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            TradingConfig config = configService.getActiveConfig();
+            
+            if (rsiPeriod != null && rsiPeriod > 0) {
+                config.setRsiPeriod(rsiPeriod);
+            }
+            if (bollingerPeriod != null && bollingerPeriod > 0) {
+                config.setBollingerPeriod(bollingerPeriod);
+            }
+            if (bollingerStdDev != null && bollingerStdDev > 0) {
+                config.setBollingerStdDev(bollingerStdDev);
+            }
+            if (emaFastPeriod != null && emaFastPeriod > 0) {
+                config.setEmaFastPeriod(emaFastPeriod);
+            }
+            if (emaSlowPeriod != null && emaSlowPeriod > 0) {
+                config.setEmaSlowPeriod(emaSlowPeriod);
+            }
+            if (supportResistancePeriod != null && supportResistancePeriod > 0) {
+                config.setSupportResistancePeriod(supportResistancePeriod);
+            }
+            
+            configService.saveConfig(config);
+            response.put("success", true);
+            response.put("message", "Indicator settings updated successfully");
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "Error: " + e.getMessage());
+        }
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    /**
      * Get current configuration (JSON)
      */
     @GetMapping("/current")

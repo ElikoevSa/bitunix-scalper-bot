@@ -53,6 +53,33 @@ public class TradingConfig {
     @Column(precision = 10, scale = 4)
     private Double minStrategyScore = 0.5; // Minimum score (0-1) for strategy to be selected
     
+    // Indicator settings
+    @Column
+    private Integer rsiPeriod = 14; // RSI calculation period
+    
+    @Column
+    private Integer bollingerPeriod = 20; // Bollinger Bands period
+    @Column(precision = 10, scale = 2)
+    private Double bollingerStdDev = 2.0; // Bollinger Bands standard deviation multiplier
+    
+    @Column
+    private Integer emaFastPeriod = 12; // Fast EMA period
+    @Column
+    private Integer emaSlowPeriod = 26; // Slow EMA period
+    
+    @Column
+    private Integer supportResistancePeriod = 50; // Support/Resistance lookback period
+    
+    // API Configuration
+    @Column(columnDefinition = "TEXT")
+    private String apiBaseUrl; // API base URL
+    
+    @Column(columnDefinition = "TEXT")
+    private String apiKey; // API key
+    
+    @Column(columnDefinition = "TEXT")
+    private String apiSecretKey; // API secret key
+    
     @Column
     private Boolean isActive = true;
 }

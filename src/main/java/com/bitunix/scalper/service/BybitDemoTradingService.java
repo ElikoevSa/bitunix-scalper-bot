@@ -1,5 +1,6 @@
 package com.bitunix.scalper.service;
 
+import com.bitunix.scalper.model.TradingConfig;
 import com.bitunix.scalper.util.BybitApiAuthUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,16 +27,58 @@ import java.util.Map;
 public class BybitDemoTradingService {
     
     @Value("${bitunix.api.base-url:https://api-demo.bybit.com}")
-    private String baseUrl;
+    private String defaultBaseUrl;
     
-    @Value("${bitunix.api.api-key}")
-    private String apiKey;
+    @Value("${bitunix.api.api-key:}")
+    private String defaultApiKey;
     
-    @Value("${bitunix.api.secret-key}")
-    private String secretKey;
+    @Value("${bitunix.api.secret-key:}")
+    private String defaultSecretKey;
     
     @Autowired
     private RateLimiterService rateLimiterService;
+    
+    @Autowired(required = false)
+    private TradingConfigService configService;
+    
+    /**
+     * Get base URL from config or use default
+     */
+    private String getBaseUrl() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiBaseUrl() != null && !config.getApiBaseUrl().isEmpty()) {
+                return config.getApiBaseUrl();
+            }
+        }
+        return defaultBaseUrl;
+    }
+    
+    /**
+     * Get API key from config or use default
+     */
+    private String getApiKey() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiKey() != null && !config.getApiKey().isEmpty()) {
+                return config.getApiKey();
+            }
+        }
+        return defaultApiKey;
+    }
+    
+    /**
+     * Get secret key from config or use default
+     */
+    private String getSecretKey() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiSecretKey() != null && !config.getApiSecretKey().isEmpty()) {
+                return config.getApiSecretKey();
+            }
+        }
+        return defaultSecretKey;
+    }
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final long RECV_WINDOW = 5000; // 5 seconds
@@ -60,6 +103,8 @@ public class BybitDemoTradingService {
      */
     private void addAuthHeaders(HttpPost request, String requestBody) {
         long timestamp = BybitApiAuthUtil.getTimestamp();
+        String apiKey = getApiKey();
+        String secretKey = getSecretKey();
         String signature = BybitApiAuthUtil.generateSignature(
             secretKey, timestamp, RECV_WINDOW, apiKey, "", requestBody);
         
@@ -72,6 +117,8 @@ public class BybitDemoTradingService {
     
     private void addAuthHeaders(HttpGet request, String queryString) {
         long timestamp = BybitApiAuthUtil.getTimestamp();
+        String apiKey = getApiKey();
+        String secretKey = getSecretKey();
         String signature = BybitApiAuthUtil.generateSignature(
             secretKey, timestamp, RECV_WINDOW, apiKey, queryString, "");
         
@@ -112,7 +159,7 @@ public class BybitDemoTradingService {
             
             String requestBody = objectMapper.writeValueAsString(requestBodyMap);
             
-            HttpPost request = new HttpPost(baseUrl + "/v5/account/demo-apply-money");
+            HttpPost request = new HttpPost(getBaseUrl() + "/v5/account/demo-apply-money");
             addAuthHeaders(request, requestBody);
             request.setEntity(new StringEntity(requestBody, "UTF-8"));
             
@@ -151,7 +198,7 @@ public class BybitDemoTradingService {
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
             String queryString = "accountType=" + accountType;
-            String url = baseUrl + "/v5/account/wallet-balance?" + queryString;
+            String url = getBaseUrl() + "/v5/account/wallet-balance?" + queryString;
             
             HttpGet request = new HttpGet(url);
             addAuthHeaders(request, queryString);
@@ -207,7 +254,7 @@ public class BybitDemoTradingService {
             
             String requestBody = objectMapper.writeValueAsString(requestBodyMap);
             
-            HttpPost request = new HttpPost(baseUrl + "/v5/order/create");
+            HttpPost request = new HttpPost(getBaseUrl() + "/v5/order/create");
             addAuthHeaders(request, requestBody);
             request.setEntity(new StringEntity(requestBody, "UTF-8"));
             
@@ -252,7 +299,7 @@ public class BybitDemoTradingService {
             }
             String queryString = queryBuilder.toString();
             
-            String url = baseUrl + "/v5/order/realtime?" + queryString;
+            String url = getBaseUrl() + "/v5/order/realtime?" + queryString;
             HttpGet request = new HttpGet(url);
             addAuthHeaders(request, queryString);
             
@@ -304,7 +351,7 @@ public class BybitDemoTradingService {
             
             String requestBody = objectMapper.writeValueAsString(requestBodyMap);
             
-            HttpPost request = new HttpPost(baseUrl + "/v5/order/cancel");
+            HttpPost request = new HttpPost(getBaseUrl() + "/v5/order/cancel");
             addAuthHeaders(request, requestBody);
             request.setEntity(new StringEntity(requestBody, "UTF-8"));
             
@@ -349,7 +396,7 @@ public class BybitDemoTradingService {
             }
             String queryString = queryBuilder.toString();
             
-            String url = baseUrl + "/v5/position/list?" + queryString;
+            String url = getBaseUrl() + "/v5/position/list?" + queryString;
             HttpGet request = new HttpGet(url);
             addAuthHeaders(request, queryString);
             
@@ -384,7 +431,7 @@ public class BybitDemoTradingService {
         }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            HttpGet request = new HttpGet(baseUrl + "/v5/account/info");
+            HttpGet request = new HttpGet(getBaseUrl() + "/v5/account/info");
             addAuthHeaders(request, "");
             
             try (CloseableHttpResponse response = httpClient.execute(request)) {
@@ -426,7 +473,7 @@ public class BybitDemoTradingService {
                 queryBuilder.append("&symbol=").append(symbol);
             }
             
-            String url = baseUrl + "/v5/market/tickers?" + queryBuilder.toString();
+            String url = getBaseUrl() + "/v5/market/tickers?" + queryBuilder.toString();
             HttpGet request = new HttpGet(url);
             request.setHeader("Content-Type", "application/json");
             

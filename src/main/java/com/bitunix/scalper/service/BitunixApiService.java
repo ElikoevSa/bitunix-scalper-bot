@@ -1,5 +1,6 @@
 package com.bitunix.scalper.service;
 
+import com.bitunix.scalper.model.TradingConfig;
 import com.bitunix.scalper.model.TradingPair;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,20 +22,62 @@ import java.util.List;
 @Service
 public class BitunixApiService {
     
-    @Value("${bitunix.api.base-url}")
-    private String baseUrl;
+    @Value("${bitunix.api.base-url:https://api-demo.bybit.com}")
+    private String defaultBaseUrl;
     
-    @Value("${bitunix.api.api-key}")
-    private String apiKey;
+    @Value("${bitunix.api.api-key:}")
+    private String defaultApiKey;
     
-    @Value("${bitunix.api.secret-key}")
-    private String secretKey;
+    @Value("${bitunix.api.secret-key:}")
+    private String defaultSecretKey;
     
     @Autowired
     private AlternativeDataService alternativeDataService;
     
     @Autowired
     private RateLimiterService rateLimiterService;
+    
+    @Autowired(required = false)
+    private TradingConfigService configService;
+    
+    /**
+     * Get base URL from config or use default
+     */
+    private String getBaseUrl() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiBaseUrl() != null && !config.getApiBaseUrl().isEmpty()) {
+                return config.getApiBaseUrl();
+            }
+        }
+        return defaultBaseUrl;
+    }
+    
+    /**
+     * Get API key from config or use default
+     */
+    private String getApiKey() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiKey() != null && !config.getApiKey().isEmpty()) {
+                return config.getApiKey();
+            }
+        }
+        return defaultApiKey;
+    }
+    
+    /**
+     * Get secret key from config or use default
+     */
+    private String getSecretKey() {
+        if (configService != null) {
+            TradingConfig config = configService.getActiveConfig();
+            if (config.getApiSecretKey() != null && !config.getApiSecretKey().isEmpty()) {
+                return config.getApiSecretKey();
+            }
+        }
+        return defaultSecretKey;
+    }
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -72,7 +115,7 @@ public class BitunixApiService {
         }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            String apiUrl = baseUrl;
+            String apiUrl = getBaseUrl();
             if (apiUrl == null || apiUrl.isEmpty()) {
                 apiUrl = "https://api-demo.bybit.com";
             }
@@ -154,7 +197,7 @@ public class BitunixApiService {
             // Use Bybit v5 market tickers endpoint (public, no auth required)
             // For demo: https://api-demo.bybit.com/v5/market/tickers
             // For mainnet: https://api.bybit.com/v5/market/tickers
-            String apiUrl = baseUrl;
+            String apiUrl = getBaseUrl();
             if (apiUrl == null || apiUrl.isEmpty()) {
                 apiUrl = "https://api-demo.bybit.com";
             }
@@ -176,8 +219,8 @@ public class BitunixApiService {
                 String responseBody = EntityUtils.toString(response.getEntity());
                 
                 if (statusCode == 200) {
-                    JsonNode jsonNode = objectMapper.readTree(responseBody);
-                    
+                JsonNode jsonNode = objectMapper.readTree(responseBody);
+                
                     // Bybit v5 format: { "retCode": 0, "retMsg": "OK", "result": { "list": [...] } }
                     if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
                         JsonNode result = jsonNode.get("result");
@@ -186,10 +229,10 @@ public class BitunixApiService {
                             if (list.isArray()) {
                                 for (JsonNode pairNode : list) {
                                     TradingPair pair = parseBybitV5Ticker(pairNode);
-                                    if (pair != null) {
-                                        pairs.add(pair);
-                                    }
-                                }
+                        if (pair != null) {
+                            pairs.add(pair);
+                        }
+                    }
                             }
                         }
                     } else {
@@ -226,7 +269,7 @@ public class BitunixApiService {
         }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            String apiUrl = baseUrl;
+            String apiUrl = getBaseUrl();
             if (apiUrl == null || apiUrl.isEmpty()) {
                 apiUrl = "https://api-demo.bybit.com";
             }
@@ -246,8 +289,8 @@ public class BitunixApiService {
                 String responseBody = EntityUtils.toString(response.getEntity());
                 
                 if (statusCode == 200) {
-                    JsonNode jsonNode = objectMapper.readTree(responseBody);
-                    
+                JsonNode jsonNode = objectMapper.readTree(responseBody);
+                
                     if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
                         JsonNode result = jsonNode.get("result");
                         if (result != null && result.has("list") && result.get("list").isArray()) {
@@ -264,7 +307,7 @@ public class BitunixApiService {
             e.printStackTrace();
         }
         
-        return null;
+            return null;
     }
     
     /**
@@ -280,7 +323,7 @@ public class BitunixApiService {
         }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            String apiUrl = baseUrl;
+            String apiUrl = getBaseUrl();
             if (apiUrl == null || apiUrl.isEmpty()) {
                 apiUrl = "https://api-demo.bybit.com";
             }
@@ -304,18 +347,18 @@ public class BitunixApiService {
                 String responseBody = EntityUtils.toString(response.getEntity());
                 
                 if (statusCode == 200) {
-                    JsonNode jsonNode = objectMapper.readTree(responseBody);
-                    
+                JsonNode jsonNode = objectMapper.readTree(responseBody);
+                
                     if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
                         JsonNode result = jsonNode.get("result");
                         if (result != null && result.has("list") && result.get("list").isArray()) {
                             JsonNode list = result.get("list");
                             for (JsonNode klineNode : list) {
                                 TradingPair pair = parseBybitV5Kline(klineNode, symbol);
-                                if (pair != null) {
-                                    klines.add(pair);
-                                }
-                            }
+                        if (pair != null) {
+                            klines.add(pair);
+                        }
+                    }
                         }
                     }
                 } else {

@@ -2,6 +2,8 @@ package com.bitunix.scalper.scheduler;
 
 import com.bitunix.scalper.model.Trade;
 import com.bitunix.scalper.model.TradingPair;
+import com.bitunix.scalper.model.TradingSignal;
+import com.bitunix.scalper.repository.TradingSignalRepository;
 import com.bitunix.scalper.service.BitunixApiService;
 import com.bitunix.scalper.service.TechnicalAnalysisService;
 import com.bitunix.scalper.service.TradingService;
@@ -42,6 +44,9 @@ public class TradingScheduler {
     
     @Autowired
     private BybitDemoTradingService bybitDemoTradingService;
+    
+    @Autowired
+    private TradingSignalRepository signalRepository;
     
     // Store active trades
     private final ConcurrentMap<String, Trade> activeTrades = new ConcurrentHashMap<>();
@@ -142,22 +147,13 @@ public class TradingScheduler {
     
     /**
      * Check for new entry signals
+     * Analyzes all pairs and all strategies, then selects the best signal
      */
     private void checkEntrySignals(List<TradingPair> activePairs) {
         // Don't open new trades if we already have active trades
         if (!activeTrades.isEmpty()) {
             return;
         }
-        
-        // Find best trading pair
-        TradingPair bestPair = selectBestTradingPair(activePairs);
-        if (bestPair == null) {
-            return;
-        }
-        
-        // Get historical data for technical analysis
-        List<TradingPair> historicalData = bitunixApiService.getKlineData(
-            bestPair.getSymbol(), "1m", 50);
         
         // Get selected strategies from configuration
         List<TradingStrategyInterface> availableStrategies = strategies.stream()
@@ -169,32 +165,83 @@ public class TradingScheduler {
             return;
         }
         
-        // Auto-select best strategy if enabled
-        TradingStrategyInterface selectedStrategy = null;
-        if (configService.getActiveConfig().getAutoSelectBestStrategy()) {
-            double minScore = configService.getActiveConfig().getMinStrategyScore();
-            selectedStrategy = strategyEvaluationService.findBestStrategy(
-                bestPair, availableStrategies, historicalData, minScore);
-        } else {
-            // Use first strategy that signals entry
+        // Analyze all pairs and all strategies to find the best signal
+        TradingPair bestPair = null;
+        TradingStrategyInterface bestStrategy = null;
+        double bestScore = 0.0;
+        List<TradingPair> bestHistoricalData = null;
+        
+        double minScore = configService.getActiveConfig().getMinStrategyScore();
+        
+        // Check each pair
+        for (TradingPair pair : activePairs) {
+            // Skip if already have active trade for this pair
+            if (activeTrades.containsKey(pair.getSymbol())) {
+                continue;
+            }
+            
+            // Get historical data for technical analysis
+            List<TradingPair> historicalData = bitunixApiService.getKlineData(
+                pair.getSymbol(), "1m", 50);
+            
+            if (historicalData == null || historicalData.isEmpty()) {
+                continue;
+            }
+            
+            // Check each strategy for this pair
             for (TradingStrategyInterface strategy : availableStrategies) {
-                if (strategy.shouldEnter(bestPair, historicalData)) {
-                    selectedStrategy = strategy;
-                    break;
+                if (!strategy.shouldEnter(pair, historicalData)) {
+                    continue;
+                }
+                
+                // Evaluate strategy score
+                double score = strategyEvaluationService.evaluateStrategy(
+                    pair, strategy, historicalData);
+                
+                // If score is above minimum and better than current best, update
+                if (score >= minScore && score > bestScore) {
+                    bestPair = pair;
+                    bestStrategy = strategy;
+                    bestScore = score;
+                    bestHistoricalData = historicalData;
                 }
             }
         }
         
-        if (selectedStrategy != null && selectedStrategy.shouldEnter(bestPair, historicalData)) {
-            Trade newTrade = tradingService.executeTrade(bestPair, selectedStrategy, 
-                                                        historicalData, availableBalance);
+        // If we found a good signal, execute it
+        if (bestPair != null && bestStrategy != null && bestHistoricalData != null) {
+            String signalReason = "Best signal selected: " + bestStrategy.getName() + 
+                                 " for " + bestPair.getSymbol() + 
+                                 " with score: " + String.format("%.2f", bestScore);
+            
+            // Save signal
+            TradingSignal signal = new TradingSignal();
+            signal.setSymbol(bestPair.getSymbol());
+            signal.setStrategy(bestStrategy.getName());
+            signal.setSignalType(TradingSignal.SignalType.BUY);
+            signal.setPrice(bestPair.getPrice());
+            signal.setSignalStrength(java.math.BigDecimal.valueOf(bestScore));
+            signal.setSignalTime(java.time.LocalDateTime.now());
+            signal.setReason(signalReason);
+            signal.setExecuted(false);
+            
+            // Try to execute trade
+            Trade newTrade = tradingService.executeTrade(bestPair, bestStrategy, 
+                                                        bestHistoricalData, availableBalance);
             
             if (newTrade != null) {
+                signal.setExecuted(true);
+                signal.setExecutedTime(java.time.LocalDateTime.now());
                 activeTrades.put(bestPair.getSymbol(), newTrade);
                 System.out.println("New trade opened: " + newTrade.getSymbol() + 
                                  " Strategy: " + newTrade.getStrategy() +
-                                 " Entry: " + newTrade.getEntryPrice());
+                                 " Entry: " + newTrade.getEntryPrice() +
+                                 " Score: " + String.format("%.2f", bestScore));
+            } else {
+                signal.setReason(signalReason + " (Trade not executed - check logs)");
             }
+            
+            signalRepository.save(signal);
         }
     }
     

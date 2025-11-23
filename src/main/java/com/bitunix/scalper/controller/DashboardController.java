@@ -2,14 +2,16 @@ package com.bitunix.scalper.controller;
 
 import com.bitunix.scalper.model.Trade;
 import com.bitunix.scalper.model.TradingPair;
+import com.bitunix.scalper.model.TradingSignal;
 import com.bitunix.scalper.repository.TradeRepository;
+import com.bitunix.scalper.repository.TradingSignalRepository;
 import com.bitunix.scalper.scheduler.TradingScheduler;
 import com.bitunix.scalper.service.BitunixApiService;
 import com.bitunix.scalper.service.TradingService;
-import com.bitunix.scalper.service.TechnicalAnalysisService;
 import com.bitunix.scalper.service.RateLimiterService;
 import com.bitunix.scalper.service.TradingConfigService;
 import com.bitunix.scalper.service.BybitDemoTradingService;
+import com.bitunix.scalper.service.BalanceCacheService;
 import com.bitunix.scalper.strategy.TradingStrategyInterface;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,9 +38,6 @@ public class DashboardController {
     private TradingService tradingService;
     
     @Autowired
-    private TechnicalAnalysisService technicalAnalysisService;
-    
-    @Autowired
     private TradingScheduler tradingScheduler;
     
     @Autowired
@@ -52,6 +51,12 @@ public class DashboardController {
     
     @Autowired
     private BybitDemoTradingService bybitDemoTradingService;
+    
+    @Autowired
+    private BalanceCacheService balanceCacheService;
+    
+    @Autowired
+    private TradingSignalRepository signalRepository;
     
     @Autowired
     private List<TradingStrategyInterface> strategies;
@@ -139,7 +144,21 @@ public class DashboardController {
         model.addAttribute("successRate", successRate);
         model.addAttribute("totalTrades", totalTrades);
         model.addAttribute("successfulTrades", successfulTrades);
-        model.addAttribute("activePairs", activePairs);
+        
+        // Filter pairs to show only selected ones in the table
+        List<TradingPair> displayPairs;
+        if (!selectedPairs.isEmpty()) {
+            // Show only selected pairs
+            displayPairs = activePairs.stream()
+                    .filter(pair -> selectedPairs.contains(pair.getSymbol()))
+                    .collect(Collectors.toList());
+        } else {
+            // Show all pairs if none selected
+            displayPairs = activePairs;
+        }
+        
+        model.addAttribute("activePairs", displayPairs);
+        model.addAttribute("selectedPairs", selectedPairs); // List of selected pair symbols
         model.addAttribute("strategies", activeStrategies);
         model.addAttribute("tradingEnabled", tradingScheduler.isTradingEnabled());
         model.addAttribute("activeTradesCount", tradingScheduler.getActiveTrades().size());
@@ -150,38 +169,67 @@ public class DashboardController {
         model.addAttribute("coingeckoRequests", rateLimiterService.getCurrentRequestCount("coingecko"));
         model.addAttribute("tradingCycleRequests", rateLimiterService.getCurrentRequestCount("trading_cycle"));
         
-        // Get account balance from Bybit API (non-blocking, with timeout)
-        try {
-            // Check if we can make request without waiting
-            if (rateLimiterService.canMakeRequest("bybit_demo")) {
-                JsonNode walletBalance = bybitDemoTradingService.getWalletBalance("UNIFIED");
-                if (walletBalance != null) {
-                    model.addAttribute("walletBalance", walletBalance);
-                    
-                    // Parse and extract balance information
-                    BigDecimal totalBalance = parseTotalBalance(walletBalance);
-                    model.addAttribute("totalBalance", totalBalance);
-                    
-                    // Parse individual coin balances
-                    Map<String, BigDecimal> coinBalances = parseCoinBalances(walletBalance);
-                    model.addAttribute("coinBalances", coinBalances);
-                } else {
-                    // Use scheduler balance as fallback
-                    double schedulerBalance = tradingScheduler.getAvailableBalance();
-                    model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
-                }
-            } else {
-                // Rate limit exceeded, use cached/scheduler balance
-                System.out.println("Rate limit exceeded for balance request, using scheduler balance");
-                double schedulerBalance = tradingScheduler.getAvailableBalance();
-                model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
-            }
-        } catch (Exception e) {
-            System.err.println("Error fetching wallet balance: " + e.getMessage());
-            // Use scheduler balance as fallback
-            double schedulerBalance = tradingScheduler.getAvailableBalance();
-            model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
+        // Get account balance from cache or API (with 10 minute limit)
+        BigDecimal totalBalance = null;
+        Map<String, BigDecimal> coinBalances = new HashMap<>();
+        
+        // Try to get from cache first
+        if (!balanceCacheService.shouldFetchBalance()) {
+            totalBalance = balanceCacheService.getCachedTotalBalance();
+            coinBalances = balanceCacheService.getCachedCoinBalances();
+            System.out.println("Using cached balance");
         }
+        
+        // If cache expired or empty, try to fetch from API
+        if (totalBalance == null && balanceCacheService.shouldFetchBalance()) {
+            try {
+                // Check if we can make request without waiting
+                if (rateLimiterService.canMakeRequest("bybit_demo")) {
+                    JsonNode walletBalance = bybitDemoTradingService.getWalletBalance("UNIFIED");
+                    if (walletBalance != null) {
+                        model.addAttribute("walletBalance", walletBalance);
+                        
+                        // Parse and extract balance information
+                        totalBalance = parseTotalBalance(walletBalance);
+                        coinBalances = parseCoinBalances(walletBalance);
+                        
+                        // Update cache
+                        balanceCacheService.updateCache(walletBalance, totalBalance, coinBalances);
+                        System.out.println("Balance updated from API and cached");
+                    }
+                } else {
+                    System.out.println("Rate limit exceeded for balance request");
+                }
+            } catch (Exception e) {
+                System.err.println("Error fetching wallet balance: " + e.getMessage());
+            }
+        }
+        
+        // Use fallback if still no balance
+        if (totalBalance == null) {
+            // Try cached balance even if expired
+            totalBalance = balanceCacheService.getCachedTotalBalance();
+            coinBalances = balanceCacheService.getCachedCoinBalances();
+            
+            // Final fallback to scheduler balance
+            if (totalBalance == null) {
+                double schedulerBalance = tradingScheduler.getAvailableBalance();
+                totalBalance = BigDecimal.valueOf(schedulerBalance);
+            }
+        }
+        
+        model.addAttribute("totalBalance", totalBalance);
+        model.addAttribute("coinBalances", coinBalances);
+        
+        // Get recent trading signals (last 20)
+        List<TradingSignal> recentSignals = signalRepository.findTop10ByOrderBySignalTimeDesc();
+        model.addAttribute("recentSignals", recentSignals);
+        
+        // Get unexecuted signals count
+        long unexecutedSignals = recentSignals.stream()
+                .filter(s -> !s.getExecuted())
+                .count();
+        model.addAttribute("unexecutedSignalsCount", unexecutedSignals);
         
         return "dashboard";
     }

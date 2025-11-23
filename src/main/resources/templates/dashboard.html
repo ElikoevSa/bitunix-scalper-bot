@@ -60,8 +60,15 @@
                                 <p class="text-muted" th:text="${currentStrategy?.name ?: 'No strategy selected'}"></p>
                             </div>
                             <div class="col-md-6">
-                                <h6>Selected Trading Pair</h6>
-                                <p class="text-muted" th:text="${selectedPair?.symbol ?: 'No pair selected'}"></p>
+                                <h6>Selected Trading Pairs</h6>
+                                <div th:if="${selectedPairs != null and !selectedPairs.isEmpty()}">
+                                    <div th:each="pairSymbol : ${selectedPairs}" class="mb-1">
+                                        <span class="badge bg-primary" th:text="${pairSymbol}"></span>
+                                    </div>
+                                </div>
+                                <p th:if="${selectedPairs == null or selectedPairs.isEmpty()}" class="text-muted">
+                                    All pairs (none selected)
+                                </p>
                             </div>
                         </div>
                         
@@ -140,6 +147,45 @@
                         
                         <div th:unless="${coinBalances != null and !coinBalances.isEmpty()}" class="text-muted">
                             <small>No coin balances available</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trading Signals Panel -->
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-bell"></i> Trading Signals</h5>
+                        <span th:if="${unexecutedSignalsCount > 0}" class="badge bg-warning" th:text="${unexecutedSignalsCount} + ' pending'"></span>
+                    </div>
+                    <div class="card-body">
+                        <div th:if="${recentSignals != null and !recentSignals.isEmpty()}">
+                            <div class="list-group">
+                                <div th:each="signal : ${recentSignals}" class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">
+                                                <span th:text="${signal.symbol}"></span>
+                                                <span th:if="${signal.signalType == T(com.bitunix.scalper.model.TradingSignal.SignalType).BUY}" 
+                                                      class="badge bg-success ms-2">BUY</span>
+                                                <span th:unless="${signal.signalType == T(com.bitunix.scalper.model.TradingSignal.SignalType).BUY}" 
+                                                      class="badge bg-danger ms-2">SELL</span>
+                                                <span th:if="${signal.executed}" class="badge bg-primary ms-2">Executed</span>
+                                                <span th:unless="${signal.executed}" class="badge bg-warning ms-2">Pending</span>
+                                            </h6>
+                                            <p class="mb-1 small">
+                                                <strong>Strategy:</strong> <span th:text="${signal.strategy}"></span><br>
+                                                <strong>Price:</strong> <span th:text="${signal.price != null ? #numbers.formatDecimal(signal.price, 1, 4) : 'N/A'}"></span><br>
+                                                <strong>Strength:</strong> <span th:text="${signal.signalStrength != null ? #numbers.formatDecimal(signal.signalStrength, 1, 2) : 'N/A'}"></span><br>
+                                                <span th:if="${signal.reason != null}" class="text-muted" th:text="${signal.reason}"></span>
+                                            </p>
+                                            <small class="text-muted" th:text="${signal.signalTime != null ? #temporals.format(signal.signalTime, 'HH:mm:ss') : ''}"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div th:unless="${recentSignals != null and !recentSignals.isEmpty()}" class="text-muted">
+                            <small>No signals yet. Signals will appear here when strategies detect trading opportunities.</small>
                         </div>
                     </div>
                 </div>

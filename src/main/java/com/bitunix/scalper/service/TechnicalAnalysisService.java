@@ -1,6 +1,7 @@
 package com.bitunix.scalper.service;
 
 import com.bitunix.scalper.model.TradingPair;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -10,6 +11,9 @@ import java.util.List;
 
 @Service
 public class TechnicalAnalysisService {
+    
+    @Autowired
+    private TradingConfigService configService;
     
     /**
      * Calculate RSI (Relative Strength Index)
@@ -151,35 +155,48 @@ public class TechnicalAnalysisService {
             }
         }
         
-        if (prices.size() < 26) {
+        // Get indicator settings from config
+        com.bitunix.scalper.model.TradingConfig config = configService.getActiveConfig();
+        int rsiPeriod = config.getRsiPeriod() != null ? config.getRsiPeriod() : 14;
+        int bollingerPeriod = config.getBollingerPeriod() != null ? config.getBollingerPeriod() : 20;
+        double bollingerStdDev = config.getBollingerStdDev() != null ? config.getBollingerStdDev() : 2.0;
+        int emaFastPeriod = config.getEmaFastPeriod() != null ? config.getEmaFastPeriod() : 12;
+        int emaSlowPeriod = config.getEmaSlowPeriod() != null ? config.getEmaSlowPeriod() : 26;
+        int supportResistancePeriod = config.getSupportResistancePeriod() != null ? 
+                                      config.getSupportResistancePeriod() : 50;
+        
+        int maxPeriod = Math.max(Math.max(rsiPeriod, bollingerPeriod), 
+                                Math.max(emaSlowPeriod, supportResistancePeriod));
+        
+        if (prices.size() < maxPeriod) {
             return;
         }
         
         // Calculate RSI
-        BigDecimal rsi = calculateRSI(prices, 14);
+        BigDecimal rsi = calculateRSI(prices, rsiPeriod);
         if (rsi != null) {
             pair.setRsi(rsi);
         }
         
         // Calculate Bollinger Bands
-        BigDecimal[] bollingerBands = calculateBollingerBands(prices, 20, 2.0);
+        BigDecimal[] bollingerBands = calculateBollingerBands(prices, bollingerPeriod, bollingerStdDev);
         if (bollingerBands != null) {
             pair.setBollingerUpper(bollingerBands[0]);
             pair.setBollingerLower(bollingerBands[2]);
         }
         
         // Calculate EMAs
-        BigDecimal ema12 = calculateEMA(prices, 12);
-        BigDecimal ema26 = calculateEMA(prices, 26);
-        if (ema12 != null) {
-            pair.setEma12(ema12);
+        BigDecimal emaFast = calculateEMA(prices, emaFastPeriod);
+        BigDecimal emaSlow = calculateEMA(prices, emaSlowPeriod);
+        if (emaFast != null) {
+            pair.setEma12(emaFast);
         }
-        if (ema26 != null) {
-            pair.setEma26(ema26);
+        if (emaSlow != null) {
+            pair.setEma26(emaSlow);
         }
         
         // Calculate Support and Resistance
-        BigDecimal[] supportResistance = calculateSupportResistance(prices, 50);
+        BigDecimal[] supportResistance = calculateSupportResistance(prices, supportResistancePeriod);
         if (supportResistance != null) {
             pair.setSupportLevel(supportResistance[0]);
             pair.setResistanceLevel(supportResistance[1]);

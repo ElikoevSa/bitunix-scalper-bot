@@ -192,6 +192,104 @@
             </button>
             <div id="selectionStatus" class="status-message"></div>
         </div>
+
+        <!-- API Configuration -->
+        <div class="config-section">
+            <h3><i class="fas fa-key"></i> API Configuration</h3>
+            <p class="text-muted">Configure API connection settings. These settings override application.yml configuration.</p>
+            
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label for="apiBaseUrl" class="form-label">API Base URL</label>
+                    <input type="text" class="form-control" id="apiBaseUrl" 
+                           placeholder="https://api-demo.bybit.com"
+                           th:value="${config.apiBaseUrl != null ? config.apiBaseUrl : 'https://api-demo.bybit.com'}">
+                    <small class="text-muted">Example: https://api-demo.bybit.com (for demo) or https://api.bybit.com (for production)</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="apiKey" class="form-label">API Key</label>
+                    <input type="text" class="form-control" id="apiKey" 
+                           placeholder="Your API Key"
+                           th:value="${config.apiKey != null ? config.apiKey : ''}">
+                    <small class="text-muted">Your Bybit API key</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="apiSecretKey" class="form-label">API Secret Key</label>
+                    <input type="password" class="form-control" id="apiSecretKey" 
+                           placeholder="Your API Secret Key"
+                           th:value="${config.apiSecretKey != null ? config.apiSecretKey : ''}">
+                    <small class="text-muted">Your Bybit API secret key (hidden for security)</small>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveApiSettings()">
+                <i class="fas fa-save"></i> Save API Settings
+            </button>
+            <div id="apiStatus" class="status-message"></div>
+        </div>
+
+        <!-- Indicator Settings -->
+        <div class="config-section">
+            <h3><i class="fas fa-chart-line"></i> Indicator Settings</h3>
+            <p class="text-muted">Configure technical indicator parameters.</p>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="rsiPeriod" class="form-label">RSI Period</label>
+                    <input type="number" class="form-control risk-input" id="rsiPeriod" 
+                           step="1" min="2" max="50"
+                           th:value="${config.rsiPeriod != null ? config.rsiPeriod : 14}">
+                    <small class="text-muted">Default: 14</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="bollingerPeriod" class="form-label">Bollinger Bands Period</label>
+                    <input type="number" class="form-control risk-input" id="bollingerPeriod" 
+                           step="1" min="2" max="50"
+                           th:value="${config.bollingerPeriod != null ? config.bollingerPeriod : 20}">
+                    <small class="text-muted">Default: 20</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="bollingerStdDev" class="form-label">Bollinger Bands Std Dev Multiplier</label>
+                    <input type="number" class="form-control risk-input" id="bollingerStdDev" 
+                           step="0.1" min="0.5" max="5"
+                           th:value="${config.bollingerStdDev != null ? config.bollingerStdDev : 2.0}">
+                    <small class="text-muted">Default: 2.0</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="emaFastPeriod" class="form-label">Fast EMA Period</label>
+                    <input type="number" class="form-control risk-input" id="emaFastPeriod" 
+                           step="1" min="2" max="50"
+                           th:value="${config.emaFastPeriod != null ? config.emaFastPeriod : 12}">
+                    <small class="text-muted">Default: 12</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="emaSlowPeriod" class="form-label">Slow EMA Period</label>
+                    <input type="number" class="form-control risk-input" id="emaSlowPeriod" 
+                           step="1" min="2" max="50"
+                           th:value="${config.emaSlowPeriod != null ? config.emaSlowPeriod : 26}">
+                    <small class="text-muted">Default: 26</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="supportResistancePeriod" class="form-label">Support/Resistance Lookback Period</label>
+                    <input type="number" class="form-control risk-input" id="supportResistancePeriod" 
+                           step="1" min="10" max="200"
+                           th:value="${config.supportResistancePeriod != null ? config.supportResistancePeriod : 50}">
+                    <small class="text-muted">Default: 50</small>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveIndicators()">
+                <i class="fas fa-save"></i> Save Indicator Settings
+            </button>
+            <div id="indicatorsStatus" class="status-message"></div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -285,6 +383,56 @@
             })
             .catch(error => {
                 showStatus('selectionStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        function saveApiSettings() {
+            const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const apiSecretKey = document.getElementById('apiSecretKey').value.trim();
+            
+            const params = new URLSearchParams();
+            if (apiBaseUrl) params.append('apiBaseUrl', apiBaseUrl);
+            if (apiKey) params.append('apiKey', apiKey);
+            if (apiSecretKey) params.append('apiSecretKey', apiSecretKey);
+            
+            fetch('/config/api?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('apiStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('apiStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        function saveIndicators() {
+            const rsiPeriod = parseInt(document.getElementById('rsiPeriod').value);
+            const bollingerPeriod = parseInt(document.getElementById('bollingerPeriod').value);
+            const bollingerStdDev = parseFloat(document.getElementById('bollingerStdDev').value);
+            const emaFastPeriod = parseInt(document.getElementById('emaFastPeriod').value);
+            const emaSlowPeriod = parseInt(document.getElementById('emaSlowPeriod').value);
+            const supportResistancePeriod = parseInt(document.getElementById('supportResistancePeriod').value);
+            
+            const params = new URLSearchParams();
+            params.append('rsiPeriod', rsiPeriod);
+            params.append('bollingerPeriod', bollingerPeriod);
+            params.append('bollingerStdDev', bollingerStdDev);
+            params.append('emaFastPeriod', emaFastPeriod);
+            params.append('emaSlowPeriod', emaSlowPeriod);
+            params.append('supportResistancePeriod', supportResistancePeriod);
+            
+            fetch('/config/indicators?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('indicatorsStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('indicatorsStatus', 'Error: ' + error.message, false);
             });
         }
 
