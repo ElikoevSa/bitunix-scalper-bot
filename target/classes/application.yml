@@ -32,8 +32,8 @@ spring:
 bitunix:
   api:
     base-url: https://fapi.bitunix.com
-    api-key: ${BITUNIX_API_KEY:1b05acc3eb59629a068f44e74229c8c8}
-    secret-key: ${BITUNIX_SECRET_KEY:7830a6dc3f03fdea066c3ad87ce7f72c}
+    api-key: ${BITUNIX_API_KEY:}
+    secret-key: ${BITUNIX_SECRET_KEY:}
   
   trading:
     maker-fee: 0.0002  # 0.0200%
