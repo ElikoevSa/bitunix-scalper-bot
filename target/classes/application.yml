@@ -32,8 +32,8 @@ spring:
 bitunix:
   api:
     base-url: https://api-demo.bybit.com
-    api-key: ${BITUNIX_API_KEY:z6JbQdNpe6g4CUDoxc}
-    secret-key: ${BITUNIX_SECRET_KEY:liFkn1fRXgJHCQ7SYVgCAqAY6UmfaAwxkSat}
+    api-key: ${BITUNIX_API_KEY:}
+    secret-key: ${BITUNIX_SECRET_KEY:}
     # Demo trading configuration
     demo:
       enabled: true
