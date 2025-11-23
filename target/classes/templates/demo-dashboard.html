@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bybit Demo Trading Dashboard</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <style>
+        .demo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .demo-section {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .demo-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .balance-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .balance-card {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .balance-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .balance-card .amount {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        .btn-secondary {
+            background: #2196F3;
+            color: white;
+        }
+        .order-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .form-group input, .form-group select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .json-display {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status-success {
+            color: #4CAF50;
+        }
+        .status-error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>Bybit Demo Trading Dashboard</h1>
+        
+        <!-- Account Info Section -->
+        <div class="demo-section">
+            <h2>Account Information</h2>
+            <div th:if="${accountInfo}">
+                <div class="json-display" th:text="${accountInfo}"></div>
+            </div>
+            <div th:unless="${accountInfo}">
+                <p>No account information available</p>
+            </div>
+        </div>
+        
+        <!-- Wallet Balance Section -->
+        <div class="demo-section">
+            <h2>Wallet Balance</h2>
+            <div th:if="${walletBalance}">
+                <div class="balance-info" id="balanceInfo">
+                    <!-- Balance cards will be populated by JavaScript -->
+                </div>
+                <div class="json-display" th:text="${walletBalance}"></div>
+            </div>
+            <div th:unless="${walletBalance}">
+                <p>No balance information available</p>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-secondary" onclick="refreshBalance()">Refresh Balance</button>
+                <button class="btn btn-primary" onclick="showRequestFundsModal()">Request Demo Funds</button>
+            </div>
+        </div>
+        
+        <!-- Place Order Section -->
+        <div class="demo-section">
+            <h2>Place Order</h2>
+            <form id="orderForm" onsubmit="placeOrder(event)">
+                <div class="order-form">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select name="category" required>
+                            <option value="linear">Linear (Perpetual)</option>
+                            <option value="spot">Spot</option>
+                            <option value="option">Option</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Symbol</label>
+                        <input type="text" name="symbol" placeholder="BTCUSDT" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Side</label>
+                        <select name="side" required>
+                            <option value="Buy">Buy</option>
+                            <option value="Sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Order Type</label>
+                        <select name="orderType" required>
+                            <option value="Market">Market</option>
+                            <option value="Limit">Limit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input type="text" name="qty" placeholder="0.001" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Price (for Limit orders)</label>
+                        <input type="text" name="price" placeholder="Optional">
+                    </div>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn btn-primary">Place Order</button>
+                </div>
+            </form>
+            <div id="orderResult" style="margin-top: 15px;"></div>
+        </div>
+        
+        <!-- Open Orders Section -->
+        <div class="demo-section">
+            <h2>Open Orders</h2>
+            <div th:if="${openOrders}">
+                <div class="json-display" th:text="${openOrders}"></div>
+            </div>
+            <div th:unless="${openOrders}">
+                <p>No open orders</p>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-secondary" onclick="refreshOpenOrders()">Refresh Orders</button>
+            </div>
+        </div>
+        
+        <!-- Positions Section -->
+        <div class="demo-section">
+            <h2>Positions</h2>
+            <div th:if="${positions}">
+                <div class="json-display" th:text="${positions}"></div>
+            </div>
+            <div th:unless="${positions}">
+                <p>No open positions</p>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-secondary" onclick="refreshPositions()">Refresh Positions</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Request Funds Modal -->
+    <div id="requestFundsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 8px; max-width: 400px;">
+            <h2>Request Demo Funds</h2>
+            <form onsubmit="requestFunds(event)">
+                <div class="form-group">
+                    <label>Coin</label>
+                    <select name="coin" required>
+                        <option value="USDT">USDT</option>
+                        <option value="USDC">USDC</option>
+                        <option value="BTC">BTC</option>
+                        <option value="ETH">ETH</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Amount</label>
+                    <input type="text" name="amount" placeholder="100000" required>
+                    <small>Max: BTC: 15, ETH: 200, USDT/USDC: 100000</small>
+                </div>
+                <div class="action-buttons">
+                    <button type="submit" class="btn btn-primary">Request</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeRequestFundsModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        function placeOrder(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            
+            for (const [key, value] of formData.entries()) {
+                if (value) params.append(key, value);
+            }
+            
+            fetch('/demo/order/place?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultDiv = document.getElementById('orderResult');
+                if (data.success) {
+                    resultDiv.innerHTML = '<p class="status-success">Order placed successfully!</p><pre>' + JSON.stringify(data.data, null, 2) + '</pre>';
+                } else {
+                    resultDiv.innerHTML = '<p class="status-error">Error: ' + data.message + '</p><pre>' + JSON.stringify(data.data, null, 2) + '</pre>';
+                }
+            })
+            .catch(error => {
+                document.getElementById('orderResult').innerHTML = '<p class="status-error">Error: ' + error.message + '</p>';
+            });
+        }
+        
+        function refreshBalance() {
+            fetch('/demo/balance?accountType=UNIFIED')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+        
+        function refreshOpenOrders() {
+            fetch('/demo/orders/open?category=linear')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+        
+        function refreshPositions() {
+            fetch('/demo/positions?category=linear')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+        
+        function showRequestFundsModal() {
+            document.getElementById('requestFundsModal').style.display = 'block';
+        }
+        
+        function closeRequestFundsModal() {
+            document.getElementById('requestFundsModal').style.display = 'none';
+        }
+        
+        function requestFunds(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            params.append('adjustType', '0'); // 0 = add funds
+            params.append('coin', formData.get('coin'));
+            params.append('amount', formData.get('amount'));
+            
+            fetch('/demo/funds/request?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Demo funds requested successfully!');
+                    closeRequestFundsModal();
+                    refreshBalance();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+    </script>
+</body>
+</html>
+

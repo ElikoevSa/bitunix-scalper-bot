@@ -31,7 +31,10 @@ public class AlternativeDataService {
         List<TradingPair> pairs = new ArrayList<>();
         
         // Проверяем Rate Limiter перед запросом
-        rateLimiterService.waitIfNeeded("binance");
+        if (!rateLimiterService.canMakeRequest("binance")) {
+            System.out.println("Rate limit exceeded for binance request");
+            return new ArrayList<>();
+        }
         
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpGet request = new HttpGet("https://api.binance.com/api/v3/ticker/24hr");
@@ -67,7 +70,10 @@ public class AlternativeDataService {
         List<TradingPair> pairs = new ArrayList<>();
         
         // Проверяем Rate Limiter перед запросом
-        rateLimiterService.waitIfNeeded("coingecko");
+        if (!rateLimiterService.canMakeRequest("coingecko")) {
+            System.out.println("Rate limit exceeded for coingecko request");
+            return new ArrayList<>();
+        }
         
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpGet request = new HttpGet("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false");

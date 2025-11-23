@@ -13,14 +13,12 @@ public class WebConfig implements WebMvcConfigurer {
     
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // Rate limiting отключен для веб-эндпоинтов
+        // Применяется только к API бирж через сервисы (BitunixApiService, BybitDemoTradingService)
+        // Исключаем все веб-эндпоинты из rate limiting
         registry.addInterceptor(rateLimiterInterceptor)
-                .addPathPatterns("/**") // Применяется ко всем эндпоинтам
                 .excludePathPatterns(
-                    "/static/**",      // Исключаем статические ресурсы
-                    "/css/**",         // Исключаем CSS файлы
-                    "/js/**",          // Исключаем JavaScript файлы
-                    "/images/**",      // Исключаем изображения
-                    "/favicon.ico"     // Исключаем favicon
+                    "/**"              // Исключаем все веб-эндпоинты
                 );
     }
 }

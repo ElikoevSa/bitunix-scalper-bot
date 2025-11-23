@@ -27,7 +27,9 @@ public class RateLimiterInterceptor implements HandlerInterceptor {
         if (!rateLimiterService.canMakeRequest(rateLimitKey)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Rate limit exceeded. Maximum 7 requests per second.\"}");
+            long timeUntilReset = rateLimiterService.getTimeUntilReset(rateLimitKey);
+            response.getWriter().write("{\"error\":\"Rate limit exceeded. Maximum 1 request per 90 seconds. Wait " + 
+                                      (timeUntilReset / 1000) + " seconds.\"}");
             return false;
         }
         

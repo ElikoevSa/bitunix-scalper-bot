@@ -8,7 +8,10 @@ import com.bitunix.scalper.service.BitunixApiService;
 import com.bitunix.scalper.service.TradingService;
 import com.bitunix.scalper.service.TechnicalAnalysisService;
 import com.bitunix.scalper.service.RateLimiterService;
+import com.bitunix.scalper.service.TradingConfigService;
+import com.bitunix.scalper.service.BybitDemoTradingService;
 import com.bitunix.scalper.strategy.TradingStrategyInterface;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -44,28 +48,40 @@ public class DashboardController {
     private RateLimiterService rateLimiterService;
     
     @Autowired
+    private TradingConfigService configService;
+    
+    @Autowired
+    private BybitDemoTradingService bybitDemoTradingService;
+    
+    @Autowired
     private List<TradingStrategyInterface> strategies;
     
     @GetMapping("/")
     public String dashboard(Model model) {
-        // Проверяем Rate Limiter перед загрузкой дашборда
-        if (!rateLimiterService.canMakeRequest("dashboard")) {
-            System.out.println("Rate limit exceeded for dashboard, using cached data");
-            // Можно добавить логику для показа кэшированных данных
-        }
+        // Get selected pairs from configuration
+        List<String> selectedPairs = configService.getSelectedPairs();
         
-        // Get all trading pairs with error handling
-        List<TradingPair> allPairs;
+        // Get trading pairs - only selected ones if configured, otherwise all
+        // Use demo data by default for fast loading, try to get real data if available
+        List<TradingPair> allPairs = getDemoTradingPairs();
+        
         try {
-            allPairs = bitunixApiService.getAllTradingPairs();
-            if (allPairs == null || allPairs.isEmpty()) {
-                System.out.println("No trading pairs received, using demo data");
-                allPairs = getDemoTradingPairs();
+            if (!selectedPairs.isEmpty()) {
+                // Get only selected pairs from API (non-blocking)
+                List<TradingPair> apiPairs = bitunixApiService.getTradingPairs(selectedPairs);
+                if (apiPairs != null && !apiPairs.isEmpty()) {
+                    allPairs = apiPairs;
+                }
+            } else {
+                // Get all pairs if no selection (non-blocking)
+                List<TradingPair> apiPairs = bitunixApiService.getAllTradingPairs();
+                if (apiPairs != null && !apiPairs.isEmpty()) {
+                    allPairs = apiPairs;
+                }
             }
         } catch (Exception e) {
             System.err.println("Error fetching trading pairs: " + e.getMessage());
-            System.out.println("Using demo data due to API error");
-            allPairs = getDemoTradingPairs();
+            // Continue with demo data
         }
         
         // Filter active pairs with sufficient volume and limit to 20 pairs for performance
@@ -76,28 +92,9 @@ public class DashboardController {
                 .limit(20) // Limit to 20 pairs for better performance
                 .collect(Collectors.toList());
         
-        // Update technical indicators only for first 5 pairs to avoid API overload
-        List<TradingPair> limitedPairs = activePairs.stream()
-                .limit(5)
-                .collect(Collectors.toList());
-        
-        for (TradingPair pair : limitedPairs) {
-            try {
-                // Skip technical analysis for demo data
-                if (pair.getRsi() != null && pair.getBollingerUpper() != null) {
-                    continue; // Already has technical indicators (demo data)
-                }
-                
-                List<TradingPair> historicalData = bitunixApiService.getKlineData(
-                    pair.getSymbol(), "1m", 100);
-                if (historicalData != null && !historicalData.isEmpty()) {
-                    technicalAnalysisService.updateTechnicalIndicators(pair, historicalData);
-                }
-            } catch (Exception e) {
-                System.err.println("Error updating technical indicators for " + pair.getSymbol() + ": " + e.getMessage());
-                // Continue with next pair
-            }
-        }
+        // Skip technical indicators update for faster loading
+        // Technical indicators are updated in trading cycle, not in dashboard
+        // This prevents blocking the dashboard with API calls
         
         // Get best trading pair based on technical analysis
         TradingPair selectedPair = selectBestTradingPair(activePairs);
@@ -153,6 +150,39 @@ public class DashboardController {
         model.addAttribute("coingeckoRequests", rateLimiterService.getCurrentRequestCount("coingecko"));
         model.addAttribute("tradingCycleRequests", rateLimiterService.getCurrentRequestCount("trading_cycle"));
         
+        // Get account balance from Bybit API (non-blocking, with timeout)
+        try {
+            // Check if we can make request without waiting
+            if (rateLimiterService.canMakeRequest("bybit_demo")) {
+                JsonNode walletBalance = bybitDemoTradingService.getWalletBalance("UNIFIED");
+                if (walletBalance != null) {
+                    model.addAttribute("walletBalance", walletBalance);
+                    
+                    // Parse and extract balance information
+                    BigDecimal totalBalance = parseTotalBalance(walletBalance);
+                    model.addAttribute("totalBalance", totalBalance);
+                    
+                    // Parse individual coin balances
+                    Map<String, BigDecimal> coinBalances = parseCoinBalances(walletBalance);
+                    model.addAttribute("coinBalances", coinBalances);
+                } else {
+                    // Use scheduler balance as fallback
+                    double schedulerBalance = tradingScheduler.getAvailableBalance();
+                    model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
+                }
+            } else {
+                // Rate limit exceeded, use cached/scheduler balance
+                System.out.println("Rate limit exceeded for balance request, using scheduler balance");
+                double schedulerBalance = tradingScheduler.getAvailableBalance();
+                model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching wallet balance: " + e.getMessage());
+            // Use scheduler balance as fallback
+            double schedulerBalance = tradingScheduler.getAvailableBalance();
+            model.addAttribute("totalBalance", BigDecimal.valueOf(schedulerBalance));
+        }
+        
         return "dashboard";
     }
     
@@ -160,12 +190,6 @@ public class DashboardController {
     public String startTrading(@RequestParam(required = false) String symbol, 
                               @RequestParam(required = false) String strategyName, 
                               Model model) {
-        // Проверяем Rate Limiter перед запуском торговли
-        if (!rateLimiterService.canMakeRequest("trading_control")) {
-            System.out.println("Rate limit exceeded for trading control");
-            return "redirect:/";
-        }
-        
         try {
             tradingScheduler.startTrading();
             System.out.println("Trading started successfully");
@@ -177,12 +201,6 @@ public class DashboardController {
     
     @PostMapping("/stop-trading")
     public String stopTrading(Model model) {
-        // Проверяем Rate Limiter перед остановкой торговли
-        if (!rateLimiterService.canMakeRequest("trading_control")) {
-            System.out.println("Rate limit exceeded for trading control");
-            return "redirect:/";
-        }
-        
         try {
             tradingScheduler.stopTrading();
             System.out.println("Trading stopped successfully");
@@ -248,5 +266,76 @@ public class DashboardController {
         }
         
         return demoPairs;
+    }
+    
+    /**
+     * Parse total balance from wallet balance JSON
+     */
+    private BigDecimal parseTotalBalance(JsonNode walletBalance) {
+        try {
+            if (walletBalance.has("result") && walletBalance.get("result").has("list")) {
+                JsonNode list = walletBalance.get("result").get("list");
+                if (list.isArray() && list.size() > 0) {
+                    JsonNode account = list.get(0);
+                    if (account.has("totalEquity")) {
+                        String totalEquityStr = account.get("totalEquity").asText();
+                        if (totalEquityStr != null && !totalEquityStr.isEmpty()) {
+                            return new BigDecimal(totalEquityStr);
+                        }
+                    }
+                    // Fallback to totalWalletBalance
+                    if (account.has("totalWalletBalance")) {
+                        String totalWalletBalanceStr = account.get("totalWalletBalance").asText();
+                        if (totalWalletBalanceStr != null && !totalWalletBalanceStr.isEmpty()) {
+                            return new BigDecimal(totalWalletBalanceStr);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing total balance: " + e.getMessage());
+        }
+        return BigDecimal.ZERO;
+    }
+    
+    /**
+     * Parse individual coin balances from wallet balance JSON
+     */
+    private Map<String, BigDecimal> parseCoinBalances(JsonNode walletBalance) {
+        Map<String, BigDecimal> balances = new HashMap<>();
+        
+        try {
+            if (walletBalance.has("result") && walletBalance.get("result").has("list")) {
+                JsonNode list = walletBalance.get("result").get("list");
+                if (list.isArray() && list.size() > 0) {
+                    JsonNode account = list.get(0);
+                    if (account.has("coin")) {
+                        JsonNode coins = account.get("coin");
+                        if (coins.isArray()) {
+                            for (JsonNode coin : coins) {
+                                if (coin.has("coin") && coin.has("walletBalance")) {
+                                    String coinName = coin.get("coin").asText();
+                                    String balanceStr = coin.get("walletBalance").asText();
+                                    if (balanceStr != null && !balanceStr.isEmpty()) {
+                                        try {
+                                            BigDecimal balance = new BigDecimal(balanceStr);
+                                            if (balance.compareTo(BigDecimal.ZERO) > 0) {
+                                                balances.put(coinName, balance);
+                                            }
+                                        } catch (Exception e) {
+                                            // Skip invalid balance
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing coin balances: " + e.getMessage());
+        }
+        
+        return balances;
     }
 }

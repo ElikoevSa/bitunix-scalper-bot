@@ -54,14 +54,101 @@ public class BitunixApiService {
     }
     
     /**
+     * Get trading pairs for specific symbols from Bybit (v5 API)
+     * If symbols list is empty, returns all pairs
+     * Uses public market tickers endpoint - no authentication required
+     * Makes a single request to get all tickers, then filters by selected symbols
+     */
+    public List<TradingPair> getTradingPairs(List<String> symbols) {
+        // If no symbols specified, get all pairs
+        if (symbols == null || symbols.isEmpty()) {
+            return getAllTradingPairs();
+        }
+        
+        // Check rate limiter - if limit exceeded, return empty list (non-blocking)
+        if (!rateLimiterService.canMakeRequest("bitunix")) {
+            System.out.println("Rate limit exceeded for trading pairs request, returning empty list");
+            return new ArrayList<>();
+        }
+        
+        try (CloseableHttpClient httpClient = createHttpClient()) {
+            String apiUrl = baseUrl;
+            if (apiUrl == null || apiUrl.isEmpty()) {
+                apiUrl = "https://api-demo.bybit.com";
+            }
+            if (!apiUrl.startsWith("http")) {
+                apiUrl = "https://" + apiUrl;
+            }
+            if (apiUrl.endsWith("/")) {
+                apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+            }
+            
+            // Make a single request to get all tickers (more efficient than multiple requests)
+            String tickersUrl = apiUrl + "/v5/market/tickers?category=linear";
+            HttpGet request = new HttpGet(tickersUrl);
+            request.setHeader("Accept", "application/json");
+            
+            try (CloseableHttpResponse response = httpClient.execute(request)) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                String responseBody = EntityUtils.toString(response.getEntity());
+                
+                if (statusCode == 200) {
+                    JsonNode jsonNode = objectMapper.readTree(responseBody);
+                    
+                    // Bybit v5 format: { "retCode": 0, "retMsg": "OK", "result": { "list": [...] } }
+                    if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
+                        JsonNode result = jsonNode.get("result");
+                        if (result != null && result.has("list")) {
+                            JsonNode list = result.get("list");
+                            if (list.isArray()) {
+                                // Convert selected symbols to set for faster lookup
+                                java.util.Set<String> selectedSymbolsSet = new java.util.HashSet<>(symbols);
+                                
+                                // Parse all tickers and filter by selected symbols
+                                List<TradingPair> pairs = new ArrayList<>();
+                                for (JsonNode pairNode : list) {
+                                    TradingPair pair = parseBybitV5Ticker(pairNode);
+                                    if (pair != null && selectedSymbolsSet.contains(pair.getSymbol())) {
+                                        pairs.add(pair);
+                                    }
+                                }
+                                
+                                if (!pairs.isEmpty()) {
+                                    System.out.println("Successfully fetched " + pairs.size() + 
+                                                     " trading pairs for " + symbols.size() + " selected symbols");
+                                    return pairs;
+                                }
+                            }
+                        }
+                    } else {
+                        System.err.println("Bybit API error: " + responseBody);
+                    }
+                } else {
+                    System.err.println("HTTP error " + statusCode + ": " + responseBody);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error fetching trading pairs: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        // If failed, try alternative API
+        System.out.println("No pairs received for selected symbols, trying alternative");
+        return tryAlternativeApi();
+    }
+    
+    /**
      * Get all trading pairs from Bybit (v5 API)
      * Uses public market tickers endpoint - no authentication required
      */
     public List<TradingPair> getAllTradingPairs() {
         List<TradingPair> pairs = new ArrayList<>();
         
-        // Проверяем Rate Limiter перед запросом
-        rateLimiterService.waitIfNeeded("bitunix");
+        // Check rate limiter - if limit exceeded, return empty list (non-blocking)
+        if (!rateLimiterService.canMakeRequest("bitunix")) {
+            System.out.println("Rate limit exceeded for all trading pairs request, returning empty list");
+            return new ArrayList<>();
+        }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
             // Use Bybit v5 market tickers endpoint (public, no auth required)
@@ -132,8 +219,11 @@ public class BitunixApiService {
      * Get specific trading pair data from Bybit v5 API
      */
     public TradingPair getTradingPair(String symbol) {
-        // Проверяем Rate Limiter перед запросом
-        rateLimiterService.waitIfNeeded("bitunix");
+        // Check rate limiter - if limit exceeded, return null (non-blocking)
+        if (!rateLimiterService.canMakeRequest("bitunix")) {
+            System.out.println("Rate limit exceeded for trading pair request: " + symbol);
+            return null;
+        }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
             String apiUrl = baseUrl;
@@ -183,8 +273,11 @@ public class BitunixApiService {
     public List<TradingPair> getKlineData(String symbol, String interval, int limit) {
         List<TradingPair> klines = new ArrayList<>();
         
-        // Проверяем Rate Limiter перед запросом
-        rateLimiterService.waitIfNeeded("bitunix");
+        // Check rate limiter - if limit exceeded, return empty list (non-blocking)
+        if (!rateLimiterService.canMakeRequest("bitunix")) {
+            System.out.println("Rate limit exceeded for kline data request: " + symbol);
+            return new ArrayList<>();
+        }
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
             String apiUrl = baseUrl;
@@ -480,7 +573,10 @@ public class BitunixApiService {
         
         for (String endpoint : apiEndpoints) {
             // Проверяем Rate Limiter перед каждым альтернативным запросом
-            rateLimiterService.waitIfNeeded("bitunix");
+            if (!rateLimiterService.canMakeRequest("bitunix")) {
+                System.out.println("Rate limit exceeded for bitunix request");
+                continue; // Skip this endpoint
+            }
             
             try (CloseableHttpClient httpClient = createHttpClient()) {
                 HttpGet request = new HttpGet(endpoint);

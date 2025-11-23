@@ -5,9 +5,10 @@ import com.bitunix.scalper.model.TradingPair;
 import com.bitunix.scalper.service.BitunixApiService;
 import com.bitunix.scalper.service.TechnicalAnalysisService;
 import com.bitunix.scalper.service.TradingService;
-import com.bitunix.scalper.service.RateLimiterService;
 import com.bitunix.scalper.service.TradingConfigService;
 import com.bitunix.scalper.service.StrategyEvaluationService;
+import com.bitunix.scalper.service.BybitDemoTradingService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.bitunix.scalper.strategy.TradingStrategyInterface;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,20 +35,20 @@ public class TradingScheduler {
     private List<TradingStrategyInterface> strategies;
     
     @Autowired
-    private RateLimiterService rateLimiterService;
-    
-    @Autowired
     private TradingConfigService configService;
     
     @Autowired
     private StrategyEvaluationService strategyEvaluationService;
+    
+    @Autowired
+    private BybitDemoTradingService bybitDemoTradingService;
     
     // Store active trades
     private final ConcurrentMap<String, Trade> activeTrades = new ConcurrentHashMap<>();
     
     // Trading configuration
     private boolean tradingEnabled = false;
-    private double availableBalance = 10000.0; // Starting balance
+    private double availableBalance = 10000.0; // Starting balance (will be updated from API)
     
     /**
      * Main trading loop - runs every 30 seconds
@@ -59,21 +60,27 @@ public class TradingScheduler {
         }
         
         try {
-            // Проверяем Rate Limiter перед получением данных
-            if (!rateLimiterService.canMakeRequest("trading_cycle")) {
-                System.out.println("Rate limit exceeded for trading cycle, skipping this iteration");
-                return;
+            // Update balance from API
+            updateBalanceFromAPI();
+            
+            // Get selected pairs from configuration
+            List<String> selectedPairs = configService.getSelectedPairs();
+            
+            // Get trading pairs - only selected ones if configured, otherwise all
+            List<TradingPair> allPairs;
+            if (!selectedPairs.isEmpty()) {
+                // Get only selected pairs from API
+                allPairs = bitunixApiService.getTradingPairs(selectedPairs);
+            } else {
+                // Get all pairs if no selection
+                allPairs = bitunixApiService.getAllTradingPairs();
             }
             
-            // Get all trading pairs
-            List<TradingPair> allPairs = bitunixApiService.getAllTradingPairs();
-            
-            // Filter pairs based on configuration
+            // Filter pairs based on volume and active status
             List<TradingPair> activePairs = allPairs.stream()
                     .filter(pair -> pair.getIsActive() != null && pair.getIsActive())
                     .filter(pair -> pair.getVolume24h() != null && 
                                    pair.getVolume24h().doubleValue() > 1000)
-                    .filter(pair -> configService.isPairSelected(pair.getSymbol()))
                     .collect(Collectors.toList());
             
             // Update technical indicators
@@ -252,5 +259,55 @@ public class TradingScheduler {
      */
     public void updateBalance(double newBalance) {
         this.availableBalance = newBalance;
+    }
+    
+    /**
+     * Update balance from Bybit API
+     */
+    private void updateBalanceFromAPI() {
+        try {
+            JsonNode walletBalance = bybitDemoTradingService.getWalletBalance("UNIFIED");
+            if (walletBalance != null && walletBalance.has("result") && walletBalance.get("result").has("list")) {
+                JsonNode list = walletBalance.get("result").get("list");
+                if (list.isArray() && list.size() > 0) {
+                    JsonNode account = list.get(0);
+                    // Try to get available balance (USDT)
+                    if (account.has("coin")) {
+                        JsonNode coins = account.get("coin");
+                        if (coins.isArray()) {
+                            for (JsonNode coin : coins) {
+                                if (coin.has("coin") && coin.get("coin").asText().equals("USDT")) {
+                                    if (coin.has("availableToWithdraw")) {
+                                        String availableStr = coin.get("availableToWithdraw").asText();
+                                        if (availableStr != null && !availableStr.isEmpty()) {
+                                            this.availableBalance = Double.parseDouble(availableStr);
+                                            return;
+                                        }
+                                    }
+                                    // Fallback to walletBalance
+                                    if (coin.has("walletBalance")) {
+                                        String balanceStr = coin.get("walletBalance").asText();
+                                        if (balanceStr != null && !balanceStr.isEmpty()) {
+                                            this.availableBalance = Double.parseDouble(balanceStr);
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Fallback to totalEquity
+                    if (account.has("totalEquity")) {
+                        String totalEquityStr = account.get("totalEquity").asText();
+                        if (totalEquityStr != null && !totalEquityStr.isEmpty()) {
+                            this.availableBalance = Double.parseDouble(totalEquityStr);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error updating balance from API: " + e.getMessage());
+            // Keep current balance if API call fails
+        }
     }
 }

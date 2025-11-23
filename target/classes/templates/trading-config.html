@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Configuration</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .config-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .config-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .strategy-item, .pair-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .strategy-item input[type="checkbox"], .pair-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        .risk-input {
+            max-width: 200px;
+        }
+        .status-message {
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="fas fa-cog"></i> Trading Configuration
+            </span>
+            <div class="navbar-nav">
+                <a class="nav-link text-white" href="/">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Strategy Selection -->
+        <div class="config-section">
+            <h3><i class="fas fa-chess"></i> Strategy Selection</h3>
+            <p class="text-muted">Select which trading strategies to use. The bot will automatically choose the best strategy from the selected list based on market analysis.</p>
+            
+            <div id="strategiesList">
+                <div th:each="strategy : ${allStrategies}" class="strategy-item">
+                    <input type="checkbox" 
+                           th:id="${'strategy_' + strategy}"
+                           th:value="${strategy}"
+                           th:checked="${selectedStrategies.contains(strategy)}">
+                    <label th:for="${'strategy_' + strategy}" th:text="${strategy}"></label>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary mt-3" onclick="saveStrategies()">
+                <i class="fas fa-save"></i> Save Strategies
+            </button>
+            <div id="strategiesStatus" class="status-message"></div>
+        </div>
+
+        <!-- Trading Pairs Selection -->
+        <div class="config-section">
+            <h3><i class="fas fa-coins"></i> Trading Pairs Selection</h3>
+            <p class="text-muted">Select which trading pairs to trade. Leave empty to trade all available pairs.</p>
+            
+            <div class="mb-3">
+                <label for="pairsInput" class="form-label">Trading Pairs (comma-separated, e.g., BTCUSDT,ETHUSDT)</label>
+                <input type="text" class="form-control" id="pairsInput" 
+                       th:value="${selectedPairs != null ? #strings.listJoin(selectedPairs, ',') : ''}"
+                       placeholder="Leave empty to trade all pairs">
+            </div>
+            
+            <button class="btn btn-primary" onclick="savePairs()">
+                <i class="fas fa-save"></i> Save Pairs
+            </button>
+            <div id="pairsStatus" class="status-message"></div>
+        </div>
+
+        <!-- Risk Management -->
+        <div class="config-section">
+            <h3><i class="fas fa-shield-alt"></i> Risk Management (Percentage Based)</h3>
+            <p class="text-muted">Configure risk management as percentages of your balance.</p>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="positionSizePercent" class="form-label">Position Size (% of balance per trade)</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control risk-input" id="positionSizePercent" 
+                               step="0.1" min="0.1" max="100"
+                               th:value="${config.positionSizePercent != null ? config.positionSizePercent : 5.0}">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">Recommended: 1-10%</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="stopLossPercent" class="form-label">Stop Loss (%)</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control risk-input" id="stopLossPercent" 
+                               step="0.01" min="0.01" max="10"
+                               th:value="${config.stopLossPercent != null ? config.stopLossPercent : 0.5}">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">Recommended: 0.5-2%</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="takeProfitPercent" class="form-label">Take Profit (%)</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control risk-input" id="takeProfitPercent" 
+                               step="0.01" min="0.01" max="10"
+                               th:value="${config.takeProfitPercent != null ? config.takeProfitPercent : 0.3}">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">Recommended: 0.3-1%</small>
+                </div>
+                
+                <div class="col-md-6 mb-3">
+                    <label for="maxDailyLossPercent" class="form-label">Max Daily Loss (%)</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control risk-input" id="maxDailyLossPercent" 
+                               step="0.1" min="1" max="50"
+                               th:value="${config.maxDailyLossPercent != null ? config.maxDailyLossPercent : 10.0}">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">Recommended: 5-15%</small>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveRiskManagement()">
+                <i class="fas fa-save"></i> Save Risk Settings
+            </button>
+            <div id="riskStatus" class="status-message"></div>
+        </div>
+
+        <!-- Strategy Selection Mode -->
+        <div class="config-section">
+            <h3><i class="fas fa-brain"></i> Strategy Selection Mode</h3>
+            <p class="text-muted">Configure how the bot selects strategies for trading.</p>
+            
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="autoSelectBestStrategy"
+                           th:checked="${config.autoSelectBestStrategy != null ? config.autoSelectBestStrategy : true}">
+                    <label class="form-check-label" for="autoSelectBestStrategy">
+                        Automatically select best strategy based on market analysis
+                    </label>
+                </div>
+                <small class="text-muted">When enabled, the bot will evaluate all selected strategies and choose the one with the highest score.</small>
+            </div>
+            
+            <div class="mb-3" id="minScoreContainer">
+                <label for="minStrategyScore" class="form-label">Minimum Strategy Score (0.0 - 1.0)</label>
+                <input type="number" class="form-control risk-input" id="minStrategyScore" 
+                       step="0.1" min="0" max="1"
+                       th:value="${config.minStrategyScore != null ? config.minStrategyScore : 0.5}">
+                <small class="text-muted">Only strategies with score above this threshold will be used.</small>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveStrategySelection()">
+                <i class="fas fa-save"></i> Save Selection Mode
+            </button>
+            <div id="selectionStatus" class="status-message"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showStatus(elementId, message, isSuccess) {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.textContent = message;
+            statusDiv.className = 'status-message ' + (isSuccess ? 'status-success' : 'status-error');
+            statusDiv.style.display = 'block';
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function saveStrategies() {
+            const checkboxes = document.querySelectorAll('#strategiesList input[type="checkbox"]:checked');
+            const strategies = Array.from(checkboxes).map(cb => cb.value);
+            
+            const params = new URLSearchParams();
+            strategies.forEach(s => params.append('strategies', s));
+            
+            fetch('/config/strategies?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('strategiesStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('strategiesStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        function savePairs() {
+            const pairsInput = document.getElementById('pairsInput').value;
+            const pairs = pairsInput.split(',').map(p => p.trim()).filter(p => p.length > 0);
+            
+            const params = new URLSearchParams();
+            pairs.forEach(p => params.append('pairs', p));
+            
+            fetch('/config/pairs?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('pairsStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('pairsStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        function saveRiskManagement() {
+            const positionSizePercent = parseFloat(document.getElementById('positionSizePercent').value);
+            const stopLossPercent = parseFloat(document.getElementById('stopLossPercent').value);
+            const takeProfitPercent = parseFloat(document.getElementById('takeProfitPercent').value);
+            const maxDailyLossPercent = parseFloat(document.getElementById('maxDailyLossPercent').value);
+            
+            const params = new URLSearchParams();
+            params.append('positionSizePercent', positionSizePercent);
+            params.append('stopLossPercent', stopLossPercent);
+            params.append('takeProfitPercent', takeProfitPercent);
+            params.append('maxDailyLossPercent', maxDailyLossPercent);
+            
+            fetch('/config/risk?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('riskStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('riskStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        function saveStrategySelection() {
+            const autoSelect = document.getElementById('autoSelectBestStrategy').checked;
+            const minScore = parseFloat(document.getElementById('minStrategyScore').value);
+            
+            const params = new URLSearchParams();
+            params.append('autoSelectBestStrategy', autoSelect);
+            params.append('minStrategyScore', minScore);
+            
+            fetch('/config/strategy-selection?' + params.toString(), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('selectionStatus', data.message, data.success);
+            })
+            .catch(error => {
+                showStatus('selectionStatus', 'Error: ' + error.message, false);
+            });
+        }
+
+        // Update min score container visibility
+        document.getElementById('autoSelectBestStrategy').addEventListener('change', function() {
+            document.getElementById('minScoreContainer').style.display = this.checked ? 'block' : 'none';
+        });
+    </script>
+</body>
+</html>
+

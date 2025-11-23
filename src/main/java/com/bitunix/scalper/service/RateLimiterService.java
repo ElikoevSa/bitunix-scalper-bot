@@ -11,9 +11,9 @@ public class RateLimiterService {
     private final ConcurrentHashMap<String, AtomicLong> requestCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> lastResetTimes = new ConcurrentHashMap<>();
     
-    // Максимум 7 запросов в секунду
-    private static final int MAX_REQUESTS_PER_SECOND = 1;
-    private static final long TIME_WINDOW_MS = 1000; // 1 секунда
+    // Максимум 1 запрос в 90 секунд
+    private static final int MAX_REQUESTS_PER_WINDOW = 1;
+    private static final long TIME_WINDOW_MS = 90000; // 90 секунд
     
     /**
      * Проверяет, можно ли выполнить запрос
@@ -26,7 +26,7 @@ public class RateLimiterService {
         AtomicLong counter = requestCounters.computeIfAbsent(key, k -> new AtomicLong(0));
         Long lastResetTime = lastResetTimes.get(key);
         
-        // Если прошла секунда, сбрасываем счетчик
+        // Если прошло 90 секунд, сбрасываем счетчик
         if (lastResetTime == null || (currentTime - lastResetTime) >= TIME_WINDOW_MS) {
             counter.set(0);
             lastResetTimes.put(key, currentTime);
@@ -34,7 +34,7 @@ public class RateLimiterService {
         
         // Проверяем, не превышен ли лимит
         long currentCount = counter.incrementAndGet();
-        return currentCount <= MAX_REQUESTS_PER_SECOND;
+        return currentCount <= MAX_REQUESTS_PER_WINDOW;
     }
     
     /**
@@ -43,7 +43,13 @@ public class RateLimiterService {
     public void waitIfNeeded(String apiName) {
         while (!canMakeRequest(apiName)) {
             try {
-                Thread.sleep(100); // Ждем 100мс перед повторной проверкой
+                long timeUntilReset = getTimeUntilReset(apiName);
+                if (timeUntilReset > 0) {
+                    // Ждем до сброса счетчика или максимум 1 секунду перед повторной проверкой
+                    Thread.sleep(Math.min(timeUntilReset, 1000));
+                } else {
+                    Thread.sleep(1000); // Ждем 1 секунду перед повторной проверкой
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

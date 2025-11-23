@@ -115,6 +115,35 @@
 
             <!-- Statistics Panel -->
             <div class="col-lg-4">
+                <!-- Account Balance Panel -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-wallet"></i> Account Balance</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-card card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Total Balance</h6>
+                                <h4 class="text-primary" th:text="${totalBalance != null ? #numbers.formatDecimal(totalBalance, 1, 2) + ' USDT' : 'Loading...'}"></h4>
+                            </div>
+                        </div>
+                        
+                        <div th:if="${coinBalances != null and !coinBalances.isEmpty()}">
+                            <h6 class="mb-2">Coin Balances:</h6>
+                            <div th:each="entry : ${coinBalances}" class="mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <span th:text="${entry.key}"></span>
+                                    <strong th:text="${#numbers.formatDecimal(entry.value, 1, 4)}"></strong>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div th:unless="${coinBalances != null and !coinBalances.isEmpty()}" class="text-muted">
+                            <small>No coin balances available</small>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Trading Statistics</h5>
