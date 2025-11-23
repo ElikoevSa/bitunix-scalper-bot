@@ -24,8 +24,8 @@ public class TradingService {
     @Value("${bitunix.trading.taker-fee}")
     private BigDecimal takerFee;
     
-    @Value("${trading.risk.max-position-size}")
-    private BigDecimal maxPositionSize;
+    @Autowired
+    private TradingConfigService configService;
     
     /**
      * Execute a trade based on strategy signals
@@ -44,12 +44,20 @@ public class TradingService {
         
         // Calculate trade parameters
         double entryPrice = strategy.calculateEntryPrice(pair);
-        double positionSize = strategy.calculatePositionSize(pair, availableBalance);
         
-        // Limit position size
-        if (positionSize > maxPositionSize.doubleValue()) {
-            positionSize = maxPositionSize.doubleValue();
-        }
+        // Calculate position size based on percentage of balance
+        com.bitunix.scalper.model.TradingConfig config = configService.getActiveConfig();
+        double positionSizePercent = config.getPositionSizePercent() != null ? 
+            config.getPositionSizePercent() : 5.0; // Default 5%
+        
+        // Calculate position size as percentage of balance
+        double positionSize = (availableBalance * positionSizePercent) / 100.0;
+        
+        // Also consider strategy's own position size calculation
+        double strategyPositionSize = strategy.calculatePositionSize(pair, availableBalance);
+        
+        // Use the smaller of the two (more conservative)
+        positionSize = Math.min(positionSize, strategyPositionSize);
         
         // Determine trade type based on strategy
         Trade.TradeType tradeType = determineTradeType(pair, strategy);

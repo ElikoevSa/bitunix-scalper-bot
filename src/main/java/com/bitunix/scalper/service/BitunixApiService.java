@@ -54,72 +54,131 @@ public class BitunixApiService {
     }
     
     /**
-     * Get all trading pairs from Bitunix
+     * Get all trading pairs from Bybit (v5 API)
+     * Uses public market tickers endpoint - no authentication required
      */
     public List<TradingPair> getAllTradingPairs() {
         List<TradingPair> pairs = new ArrayList<>();
-        
-        // Always try to get real data first, fallback to demo if fails
-        // if (apiKey == null || apiKey.equals("your-api-key") || apiKey.isEmpty()) {
-        //     return getDemoTradingPairs();
-        // }
         
         // Проверяем Rate Limiter перед запросом
         rateLimiterService.waitIfNeeded("bitunix");
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            // Try public API first (no authentication required)
-            HttpGet request = new HttpGet("https://api.bitunix.com/api/v1/ticker/24hr");
-            request.setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            // Use Bybit v5 market tickers endpoint (public, no auth required)
+            // For demo: https://api-demo.bybit.com/v5/market/tickers
+            // For mainnet: https://api.bybit.com/v5/market/tickers
+            String apiUrl = baseUrl;
+            if (apiUrl == null || apiUrl.isEmpty()) {
+                apiUrl = "https://api-demo.bybit.com";
+            }
+            // Ensure we use the correct base URL format
+            if (!apiUrl.startsWith("http")) {
+                apiUrl = "https://" + apiUrl;
+            }
+            // Remove trailing slash if present
+            if (apiUrl.endsWith("/")) {
+                apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+            }
+            
+            String tickersUrl = apiUrl + "/v5/market/tickers?category=linear";
+            HttpGet request = new HttpGet(tickersUrl);
             request.setHeader("Accept", "application/json");
             
             try (CloseableHttpResponse response = httpClient.execute(request)) {
+                int statusCode = response.getStatusLine().getStatusCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-                JsonNode jsonNode = objectMapper.readTree(responseBody);
                 
-                if (jsonNode.isArray()) {
-                    for (JsonNode pairNode : jsonNode) {
-                        TradingPair pair = parseTradingPair(pairNode);
-                        if (pair != null) {
-                            pairs.add(pair);
+                if (statusCode == 200) {
+                    JsonNode jsonNode = objectMapper.readTree(responseBody);
+                    
+                    // Bybit v5 format: { "retCode": 0, "retMsg": "OK", "result": { "list": [...] } }
+                    if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
+                        JsonNode result = jsonNode.get("result");
+                        if (result != null && result.has("list")) {
+                            JsonNode list = result.get("list");
+                            if (list.isArray()) {
+                                for (JsonNode pairNode : list) {
+                                    TradingPair pair = parseBybitV5Ticker(pairNode);
+                                    if (pair != null) {
+                                        pairs.add(pair);
+                                    }
+                                }
+                            }
                         }
+                    } else {
+                        System.err.println("Bybit API error: " + responseBody);
                     }
+                } else {
+                    System.err.println("HTTP error " + statusCode + ": " + responseBody);
                 }
             }
         } catch (Exception e) {
             // Log error and try alternative API
-            System.err.println("Error fetching trading pairs from primary API: " + e.getMessage());
+            System.err.println("Error fetching trading pairs from Bybit v5 API: " + e.getMessage());
+            e.printStackTrace();
             return tryAlternativeApi();
         }
         
+        if (pairs.isEmpty()) {
+            System.out.println("No pairs received from Bybit API, trying alternatives");
+            return tryAlternativeApi();
+        }
+        
+        System.out.println("Successfully fetched " + pairs.size() + " trading pairs from Bybit v5 API");
         return pairs;
     }
     
     /**
-     * Get specific trading pair data
+     * Get specific trading pair data from Bybit v5 API
      */
     public TradingPair getTradingPair(String symbol) {
         // Проверяем Rate Limiter перед запросом
         rateLimiterService.waitIfNeeded("bitunix");
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            HttpGet request = new HttpGet(baseUrl + "/api/v1/ticker/24hr?symbol=" + symbol);
-            request.setHeader("X-MBX-APIKEY", apiKey);
+            String apiUrl = baseUrl;
+            if (apiUrl == null || apiUrl.isEmpty()) {
+                apiUrl = "https://api-demo.bybit.com";
+            }
+            if (!apiUrl.startsWith("http")) {
+                apiUrl = "https://" + apiUrl;
+            }
+            if (apiUrl.endsWith("/")) {
+                apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+            }
+            
+            String tickersUrl = apiUrl + "/v5/market/tickers?category=linear&symbol=" + symbol;
+            HttpGet request = new HttpGet(tickersUrl);
+            request.setHeader("Accept", "application/json");
             
             try (CloseableHttpResponse response = httpClient.execute(request)) {
+                int statusCode = response.getStatusLine().getStatusCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-                JsonNode jsonNode = objectMapper.readTree(responseBody);
                 
-                return parseTradingPair(jsonNode);
+                if (statusCode == 200) {
+                    JsonNode jsonNode = objectMapper.readTree(responseBody);
+                    
+                    if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
+                        JsonNode result = jsonNode.get("result");
+                        if (result != null && result.has("list") && result.get("list").isArray()) {
+                            JsonNode list = result.get("list");
+                            if (list.size() > 0) {
+                                return parseBybitV5Ticker(list.get(0));
+                            }
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("Error fetching trading pair " + symbol + ": " + e.getMessage());
-            return null;
+            e.printStackTrace();
         }
+        
+        return null;
     }
     
     /**
-     * Get kline/candlestick data for technical analysis
+     * Get kline/candlestick data for technical analysis from Bybit v5 API
      */
     public List<TradingPair> getKlineData(String symbol, String interval, int limit) {
         List<TradingPair> klines = new ArrayList<>();
@@ -128,33 +187,145 @@ public class BitunixApiService {
         rateLimiterService.waitIfNeeded("bitunix");
         
         try (CloseableHttpClient httpClient = createHttpClient()) {
-            String url = String.format("%s/api/v1/klines?symbol=%s&interval=%s&limit=%d", 
-                                     baseUrl, symbol, interval, limit);
-            HttpGet request = new HttpGet(url);
-            request.setHeader("X-MBX-APIKEY", apiKey);
+            String apiUrl = baseUrl;
+            if (apiUrl == null || apiUrl.isEmpty()) {
+                apiUrl = "https://api-demo.bybit.com";
+            }
+            if (!apiUrl.startsWith("http")) {
+                apiUrl = "https://" + apiUrl;
+            }
+            if (apiUrl.endsWith("/")) {
+                apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+            }
+            
+            // Map interval format (1m -> 1, 5m -> 5, 1h -> 60, 1d -> D)
+            String bybitInterval = mapIntervalToBybit(interval);
+            
+            String klineUrl = String.format("%s/v5/market/kline?category=linear&symbol=%s&interval=%s&limit=%d", 
+                                          apiUrl, symbol, bybitInterval, limit);
+            HttpGet request = new HttpGet(klineUrl);
+            request.setHeader("Accept", "application/json");
             
             try (CloseableHttpResponse response = httpClient.execute(request)) {
+                int statusCode = response.getStatusLine().getStatusCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-                JsonNode jsonNode = objectMapper.readTree(responseBody);
                 
-                if (jsonNode.isArray()) {
-                    for (JsonNode klineNode : jsonNode) {
-                        TradingPair pair = parseKlineData(klineNode, symbol);
-                        if (pair != null) {
-                            klines.add(pair);
+                if (statusCode == 200) {
+                    JsonNode jsonNode = objectMapper.readTree(responseBody);
+                    
+                    if (jsonNode.has("retCode") && jsonNode.get("retCode").asInt() == 0) {
+                        JsonNode result = jsonNode.get("result");
+                        if (result != null && result.has("list") && result.get("list").isArray()) {
+                            JsonNode list = result.get("list");
+                            for (JsonNode klineNode : list) {
+                                TradingPair pair = parseBybitV5Kline(klineNode, symbol);
+                                if (pair != null) {
+                                    klines.add(pair);
+                                }
+                            }
                         }
                     }
+                } else {
+                    System.err.println("Error fetching kline data: HTTP " + statusCode + " - " + responseBody);
                 }
             }
         } catch (Exception e) {
             System.err.println("Error fetching kline data for " + symbol + ": " + e.getMessage());
+            e.printStackTrace();
         }
         
         return klines;
     }
     
     /**
-     * Parse trading pair from JSON response
+     * Map interval format to Bybit format
+     */
+    private String mapIntervalToBybit(String interval) {
+        // Bybit supports: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, M, W
+        switch (interval.toLowerCase()) {
+            case "1m": return "1";
+            case "3m": return "3";
+            case "5m": return "5";
+            case "15m": return "15";
+            case "30m": return "30";
+            case "1h": return "60";
+            case "2h": return "120";
+            case "4h": return "240";
+            case "6h": return "360";
+            case "12h": return "720";
+            case "1d": return "D";
+            case "1w": return "W";
+            case "1M": return "M";
+            default: return "1"; // Default to 1 minute
+        }
+    }
+    
+    /**
+     * Parse trading pair from Bybit v5 ticker JSON response
+     * Format: { "symbol": "BTCUSDT", "lastPrice": "45000.5", "volume24h": "1000000", "price24hPcnt": "2.5", ... }
+     */
+    private TradingPair parseBybitV5Ticker(JsonNode node) {
+        try {
+            TradingPair pair = new TradingPair();
+            
+            if (!node.has("symbol")) {
+                return null;
+            }
+            
+            pair.setSymbol(node.get("symbol").asText());
+            
+            // Parse price
+            if (node.has("lastPrice")) {
+                String priceStr = node.get("lastPrice").asText();
+                if (priceStr != null && !priceStr.isEmpty()) {
+                    pair.setPrice(new BigDecimal(priceStr));
+                }
+            }
+            
+            // Parse 24h volume
+            if (node.has("volume24h")) {
+                String volumeStr = node.get("volume24h").asText();
+                if (volumeStr != null && !volumeStr.isEmpty()) {
+                    pair.setVolume24h(new BigDecimal(volumeStr));
+                }
+            }
+            
+            // Parse 24h price change percentage
+            if (node.has("price24hPcnt")) {
+                String changeStr = node.get("price24hPcnt").asText();
+                if (changeStr != null && !changeStr.isEmpty()) {
+                    // Convert from decimal (0.025) to percentage (2.5)
+                    BigDecimal change = new BigDecimal(changeStr);
+                    pair.setPriceChange24h(change.multiply(BigDecimal.valueOf(100)));
+                }
+            }
+            
+            pair.setIsActive(true);
+            pair.setLastUpdated(LocalDateTime.now());
+            
+            // Extract base and quote assets from symbol
+            String symbol = pair.getSymbol();
+            if (symbol.endsWith("USDT")) {
+                pair.setBaseAsset(symbol.substring(0, symbol.length() - 4));
+                pair.setQuoteAsset("USDT");
+            } else if (symbol.endsWith("USDC")) {
+                pair.setBaseAsset(symbol.substring(0, symbol.length() - 4));
+                pair.setQuoteAsset("USDC");
+            } else if (symbol.endsWith("BTC")) {
+                pair.setBaseAsset(symbol.substring(0, symbol.length() - 3));
+                pair.setQuoteAsset("BTC");
+            }
+            
+            return pair;
+        } catch (Exception e) {
+            System.err.println("Error parsing Bybit v5 ticker: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Parse trading pair from old format (for backward compatibility)
      */
     private TradingPair parseTradingPair(JsonNode node) {
         try {
@@ -184,7 +355,41 @@ public class BitunixApiService {
     }
     
     /**
-     * Parse kline data from JSON response
+     * Parse kline data from Bybit v5 API response
+     * Format: ["1690000000000", "45000", "45100", "44900", "45050", "1000"]
+     * [timestamp, open, high, low, close, volume]
+     */
+    private TradingPair parseBybitV5Kline(JsonNode node, String symbol) {
+        try {
+            if (!node.isArray() || node.size() < 6) {
+                return null;
+            }
+            
+            TradingPair pair = new TradingPair();
+            pair.setSymbol(symbol);
+            
+            // Bybit v5 kline format: [timestamp, open, high, low, close, volume, turnover]
+            // Index 4 is close price
+            pair.setPrice(new BigDecimal(node.get(4).asText()));
+            
+            // Index 5 is volume
+            if (node.size() > 5) {
+                pair.setVolume24h(new BigDecimal(node.get(5).asText()));
+            }
+            
+            pair.setIsActive(true);
+            pair.setLastUpdated(LocalDateTime.now());
+            
+            return pair;
+        } catch (Exception e) {
+            System.err.println("Error parsing Bybit v5 kline data: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Parse kline data from old format (for backward compatibility)
      */
     private TradingPair parseKlineData(JsonNode node, String symbol) {
         try {

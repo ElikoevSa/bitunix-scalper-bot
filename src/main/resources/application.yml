@@ -28,12 +28,18 @@ spring:
       enabled: true
       path: /h2-console
 
-# Bitunix API Configuration
+# Bitunix/Bybit API Configuration
 bitunix:
   api:
-    base-url: https://fapi.bitunix.com
-    api-key: ${BITUNIX_API_KEY:}
-    secret-key: ${BITUNIX_SECRET_KEY:}
+    base-url: https://api-demo.bybit.com
+    api-key: ${BITUNIX_API_KEY:z6JbQdNpe6g4CUDoxc}
+    secret-key: ${BITUNIX_SECRET_KEY:liFkn1fRXgJHCQ7SYVgCAqAY6UmfaAwxkSat}
+    # Demo trading configuration
+    demo:
+      enabled: true
+      recv-window: 5000  # Receive window in milliseconds
+      # Default demo funds limits per request:
+      # BTC: "15", ETH: "200", USDT: "100000", USDC: "100000"
   
   trading:
     maker-fee: 0.0002  # 0.0200%
@@ -54,10 +60,16 @@ trading:
       - mean-reversion
   
   risk:
-    max-position-size: 1
-    stop-loss-percentage: 0.5
-    take-profit-percentage: 0.3
-    max-daily-loss: 5
+    # Risk management is now percentage-based (configured via UI)
+    # Default values (can be overridden in UI):
+    position-size-percent: 5.0  # % of balance per trade
+    stop-loss-percent: 0.5      # % stop loss
+    take-profit-percent: 0.3    # % take profit
+    max-daily-loss-percent: 10.0 # % max daily loss
+  
+  strategy-selection:
+    auto-select-best: true      # Automatically select best strategy
+    min-strategy-score: 0.5     # Minimum score (0-1) for strategy selection
 
 logging:
   level:

@@ -6,6 +6,8 @@ import com.bitunix.scalper.service.BitunixApiService;
 import com.bitunix.scalper.service.TechnicalAnalysisService;
 import com.bitunix.scalper.service.TradingService;
 import com.bitunix.scalper.service.RateLimiterService;
+import com.bitunix.scalper.service.TradingConfigService;
+import com.bitunix.scalper.service.StrategyEvaluationService;
 import com.bitunix.scalper.strategy.TradingStrategyInterface;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,6 +36,12 @@ public class TradingScheduler {
     @Autowired
     private RateLimiterService rateLimiterService;
     
+    @Autowired
+    private TradingConfigService configService;
+    
+    @Autowired
+    private StrategyEvaluationService strategyEvaluationService;
+    
     // Store active trades
     private final ConcurrentMap<String, Trade> activeTrades = new ConcurrentHashMap<>();
     
@@ -60,11 +68,12 @@ public class TradingScheduler {
             // Get all trading pairs
             List<TradingPair> allPairs = bitunixApiService.getAllTradingPairs();
             
-            // Filter and update active pairs
+            // Filter pairs based on configuration
             List<TradingPair> activePairs = allPairs.stream()
                     .filter(pair -> pair.getIsActive() != null && pair.getIsActive())
                     .filter(pair -> pair.getVolume24h() != null && 
                                    pair.getVolume24h().doubleValue() > 1000)
+                    .filter(pair -> configService.isPairSelected(pair.getSymbol()))
                     .collect(Collectors.toList());
             
             // Update technical indicators
@@ -143,23 +152,41 @@ public class TradingScheduler {
         List<TradingPair> historicalData = bitunixApiService.getKlineData(
             bestPair.getSymbol(), "1m", 50);
         
-        // Check each strategy
-        for (TradingStrategyInterface strategy : strategies) {
-            if (!strategy.isActive()) {
-                continue;
-            }
-            
-            if (strategy.shouldEnter(bestPair, historicalData)) {
-                Trade newTrade = tradingService.executeTrade(bestPair, strategy, 
-                                                            historicalData, availableBalance);
-                
-                if (newTrade != null) {
-                    activeTrades.put(bestPair.getSymbol(), newTrade);
-                    System.out.println("New trade opened: " + newTrade.getSymbol() + 
-                                     " Strategy: " + newTrade.getStrategy() +
-                                     " Entry: " + newTrade.getEntryPrice());
-                    break; // Only open one trade at a time
+        // Get selected strategies from configuration
+        List<TradingStrategyInterface> availableStrategies = strategies.stream()
+                .filter(s -> s.isActive())
+                .filter(s -> configService.isStrategySelected(s.getName()))
+                .collect(Collectors.toList());
+        
+        if (availableStrategies.isEmpty()) {
+            return;
+        }
+        
+        // Auto-select best strategy if enabled
+        TradingStrategyInterface selectedStrategy = null;
+        if (configService.getActiveConfig().getAutoSelectBestStrategy()) {
+            double minScore = configService.getActiveConfig().getMinStrategyScore();
+            selectedStrategy = strategyEvaluationService.findBestStrategy(
+                bestPair, availableStrategies, historicalData, minScore);
+        } else {
+            // Use first strategy that signals entry
+            for (TradingStrategyInterface strategy : availableStrategies) {
+                if (strategy.shouldEnter(bestPair, historicalData)) {
+                    selectedStrategy = strategy;
+                    break;
                 }
+            }
+        }
+        
+        if (selectedStrategy != null && selectedStrategy.shouldEnter(bestPair, historicalData)) {
+            Trade newTrade = tradingService.executeTrade(bestPair, selectedStrategy, 
+                                                        historicalData, availableBalance);
+            
+            if (newTrade != null) {
+                activeTrades.put(bestPair.getSymbol(), newTrade);
+                System.out.println("New trade opened: " + newTrade.getSymbol() + 
+                                 " Strategy: " + newTrade.getStrategy() +
+                                 " Entry: " + newTrade.getEntryPrice());
             }
         }
     }

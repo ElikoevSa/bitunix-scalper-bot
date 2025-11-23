@@ -20,6 +20,7 @@
   - Цены входа и выхода
   - Профита/убытка с учетом комиссий
   - Статистики торговли
+- **Интеграция с Bybit Demo Trading** для безопасного тестирования стратегий
 
 ## Технические требования
 
@@ -35,7 +36,21 @@
    cd bitunix-scalper-bot
    ```
 
-2. **Настройте API ключи Bitunix:**
+2. **Настройте API ключи:**
+   
+   **Для демо-торговли (рекомендуется для начала):**
+   - Войдите в Bybit и переключитесь в режим "Demo Trading"
+   - Создайте API ключ для демо-торговли
+   - Настройте в `application.yml`:
+   ```yaml
+   bitunix:
+     api:
+       base-url: https://api-demo.bybit.com
+       api-key: YOUR_DEMO_API_KEY
+       secret-key: YOUR_DEMO_SECRET_KEY
+   ```
+   
+   **Для реальной торговли:**
    Создайте файл `application-local.yml` в папке `src/main/resources/`:
    ```yaml
    bitunix:
@@ -43,6 +58,8 @@
        api-key: YOUR_API_KEY
        secret-key: YOUR_SECRET_KEY
    ```
+   
+   Подробнее о демо-торговле см. [DEMO_TRADING.md](DEMO_TRADING.md)
 
 3. **Соберите проект:**
    ```bash
@@ -55,7 +72,8 @@
    ```
 
 5. **Откройте веб-панель:**
-   Перейдите по адресу: http://localhost:8080
+   - Основная панель: http://localhost:8080
+   - Демо-торговля: http://localhost:8080/demo/dashboard
 
 ## Конфигурация
 
